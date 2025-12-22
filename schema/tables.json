@@ -1,0 +1,28 @@
+{
+  "tables": [
+    {
+      "name": "functions",
+      "columns": ["file", "line", "name", "visibility", "param_count", "return_type", "complexity", "has_test"]
+    },
+    {
+      "name": "calls",
+      "columns": ["file", "line", "caller", "callee", "is_external"]
+    },
+    {
+      "name": "imports",
+      "columns": ["file", "line", "module", "alias", "is_std"]
+    },
+    {
+      "name": "structs",
+      "columns": ["file", "line", "name", "field_count", "visibility", "implements"]
+    },
+    {
+      "name": "variables",
+      "columns": ["file", "line", "name", "type_hint", "scope", "is_mutated"]
+    },
+    {
+      "name": "comments",
+      "columns": ["file", "line", "text", "attached_to", "is_doc"]
+    }
+  ]
+}
