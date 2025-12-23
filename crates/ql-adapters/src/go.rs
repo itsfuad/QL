@@ -21,6 +21,8 @@ impl LanguageAdapter for GoAdapter {
             return;
         }
 
+        // We keep v1 mapping narrow on purpose: only top-level Go functions feed the
+        // shared `functions` table until richer extraction lands.
         let Some(name_node) = node.child_by_field_name("name") else {
             return;
         };
@@ -31,6 +33,7 @@ impl LanguageAdapter for GoAdapter {
 
         rows.functions.push(FunctionRow {
             file: rows.current_file.clone(),
+            // Tree-sitter rows are zero-based. Schema contract is one-based.
             line: node.start_position().row + 1,
             name: name.to_string(),
             ..FunctionRow::default()
