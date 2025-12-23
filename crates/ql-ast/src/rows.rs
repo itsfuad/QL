@@ -77,4 +77,13 @@ impl TableBatch {
             ..Self::default()
         }
     }
+
+    pub fn extend(&mut self, mut other: TableBatch) {
+        self.functions.append(&mut other.functions);
+        self.calls.append(&mut other.calls);
+        self.imports.append(&mut other.imports);
+        self.structs.append(&mut other.structs);
+        self.variables.append(&mut other.variables);
+        self.comments.append(&mut other.comments);
+    }
 }
