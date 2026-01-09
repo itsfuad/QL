@@ -1269,6 +1269,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ql-cli"
+version = "0.1.0"
+dependencies = [
+ "ql-adapters",
+ "ql-ast",
+ "ql-core",
+ "serde_json",
+]
+
+[[package]]
 name = "ql-core"
 version = "0.1.0"
 dependencies = [

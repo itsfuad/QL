@@ -2,5 +2,6 @@
 /extension/out/
 /extension/node_modules/
 /milestone.md
+/project.md
 
 .DS_Store

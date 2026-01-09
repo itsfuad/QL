@@ -28,41 +28,33 @@ Schema source lives in [schema/tables.json](schema/tables.json).
 
 ## Architecture
 
-Project has four layers. They stay separate:
+```
+ql/
+├── crates/
+│   ├── ql-ast/         AST bridge, Tree-sitter walk, schema mapper
+│   ├── ql-adapters/    One Rust adapter per language
+│   ├── ql-core/        Query engine, SQL parser, planner, DuckDB execution
+│   └── ql-cli/         CLI binary — arg parsing, output formatting, watch mode
+└── extension/          VS Code extension (TypeScript)
+```
 
-1. Interface layer
-   Go CLI, watch mode, VS Code extension
-2. Query engine
-   Rust SQL parser, planner, DuckDB execution, output formatting
-3. AST bridge
-   Rust Tree-sitter walk, schema mapping, second-pass analysis
-4. Language adapters
-   One Rust adapter per language
+Single binary. No subprocess protocol. No Go.
 
 ## Current Status
 
-Current repo contains:
-
-- shared row types and `TableBatch`
-- adapter trait and Tree-sitter walk path
-- first Go adapter stub for function declarations
-- workspace scaffolding for Rust, Go CLI, and VS Code extension
-
-Planned next work:
-
-- DuckDB ingest in `ql-core`
-- hand-written SQL parser for v1 subset
-- subprocess JSON protocol between CLI and engine
-- file cache
-- full language adapters
+- Shared row types and `TableBatch`
+- Language adapter trait and Tree-sitter walk path
+- Go adapter for function declarations
+- DuckDB-backed in-memory schema with multi-table ingest
+- Hand-written SQL parser (SELECT, FROM, JOIN, WHERE, ORDER BY, LIMIT, operators)
+- Planner maps SQL AST to DuckDB execution
+- CLI with table/JSON/CSV output and watch mode
 
 ## Development
 
-Current baseline commands:
-
 ```bash
 cargo test
-go test ./...
+cargo build --bin ql
 ```
 
 ## Scope
