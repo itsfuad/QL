@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn parses_not_in_list() {
-        let query = parse_query("SELECT name FROM functions WHERE file NOT IN ('a.go', 'b.go')")
+        let query = parse_query("SELECT name FROM functions WHERE file NOT IN ('a.rs', 'b.rs')")
             .expect("query should parse");
 
         assert_eq!(
@@ -545,8 +545,8 @@ mod tests {
             Some(Expr::InList {
                 expr: Box::new(Expr::Identifier("file".to_string())),
                 values: vec![
-                    Expr::Literal(Literal::String("a.go".to_string())),
-                    Expr::Literal(Literal::String("b.go".to_string())),
+                    Expr::Literal(Literal::String("a.rs".to_string())),
+                    Expr::Literal(Literal::String("b.rs".to_string())),
                 ],
                 negated: true,
             })

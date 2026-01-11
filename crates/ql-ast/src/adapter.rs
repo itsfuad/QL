@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tree_sitter::{Node, Parser, TreeCursor};
 
 use crate::rows::TableBatch;
@@ -7,6 +9,9 @@ pub trait LanguageAdapter: Send + Sync {
     fn grammar(&self) -> tree_sitter::Language;
     fn extensions(&self) -> &[&str];
     fn map_node(&self, node: Node<'_>, source: &str, rows: &mut TableBatch);
+    /// Post-processing after all files collected. Use for cross-file analysis
+    /// like has_test detection, implements mapping, comment association.
+    fn second_pass(&self, _batch: &mut TableBatch, _root: &Path) {}
 }
 
 pub fn walk_source(
@@ -22,8 +27,6 @@ pub fn walk_source(
         return Ok(batch);
     };
 
-    // Tree-sitter exposes cursor-based traversal. We walk every node once and let
-    // adapter decide whether current node matters for shared schema.
     let mut cursor = tree.walk();
     walk_node(adapter, &mut cursor, source, &mut batch);
     Ok(batch)
