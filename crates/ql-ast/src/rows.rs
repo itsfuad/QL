@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct FunctionRow {
     pub file: String,
     pub line: usize,
@@ -12,7 +12,7 @@ pub struct FunctionRow {
     pub has_test: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CallRow {
     pub file: String,
     pub line: usize,
@@ -21,7 +21,7 @@ pub struct CallRow {
     pub is_external: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ImportRow {
     pub file: String,
     pub line: usize,
@@ -30,7 +30,7 @@ pub struct ImportRow {
     pub is_std: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StructRow {
     pub file: String,
     pub line: usize,
@@ -40,7 +40,7 @@ pub struct StructRow {
     pub implements: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct VariableRow {
     pub file: String,
     pub line: usize,
@@ -50,7 +50,7 @@ pub struct VariableRow {
     pub is_mutated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CommentRow {
     pub file: String,
     pub line: usize,
@@ -59,7 +59,7 @@ pub struct CommentRow {
     pub is_doc: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct TableBatch {
     pub current_file: String,
     pub functions: Vec<FunctionRow>,

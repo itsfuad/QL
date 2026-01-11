@@ -1278,6 +1278,7 @@ dependencies = [
  "ql-adapters",
  "ql-ast",
  "ql-core",
+ "serde",
  "serde_json",
 ]
 

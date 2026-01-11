@@ -2,7 +2,7 @@ use super::ast::{
     BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
     SelectStatement, TableRef, UnaryOperator,
 };
-use super::lexer::{Token, TokenKind, lex};
+use super::lexer::{lex, Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -50,6 +50,8 @@ impl Parser {
         } else {
             None
         };
+
+        self.matches(TokenMatcher::Semicolon);
 
         if !self.is_done() {
             return Err(self.error_here("unexpected trailing tokens"));
@@ -362,6 +364,7 @@ enum TokenMatcher {
     Dot,
     LParen,
     RParen,
+    Semicolon,
     Star,
     Eq,
     NotEq,
@@ -395,6 +398,7 @@ impl TokenMatcher {
                 | (Self::Dot, TokenKind::Dot)
                 | (Self::LParen, TokenKind::LParen)
                 | (Self::RParen, TokenKind::RParen)
+                | (Self::Semicolon, TokenKind::Semicolon)
                 | (Self::Star, TokenKind::Star)
                 | (Self::Eq, TokenKind::Eq)
                 | (Self::NotEq, TokenKind::NotEq)
@@ -414,7 +418,7 @@ mod tests {
         BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
         SelectStatement, TableRef, UnaryOperator,
     };
-    use super::{ParseError, parse_query};
+    use super::{parse_query, ParseError};
 
     #[test]
     fn parses_select_wildcard() {
@@ -588,6 +592,13 @@ mod tests {
             ]
         );
         assert_eq!(query.limit, Some(20));
+    }
+
+    #[test]
+    fn parses_trailing_semicolon() {
+        let query = parse_query("SELECT name FROM functions;").expect("query should parse");
+
+        assert_eq!(query.select, vec![SelectItem::Column("name".to_string())]);
     }
 
     #[test]

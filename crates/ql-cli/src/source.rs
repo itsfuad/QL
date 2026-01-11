@@ -1,9 +1,19 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ql_adapters::{adapter_for_path, adapters};
-use ql_ast::{TableBatch, walk_source};
+use ql_ast::{walk_source, TableBatch};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedFile {
+    modified_secs: u64,
+    modified_nanos: u32,
+    len: u64,
+    batch: TableBatch,
+}
 
 pub fn is_source_file(path: &Path) -> bool {
     adapter_for_path(path).is_some()
@@ -16,7 +26,9 @@ fn walk_relative_files(root: &Path) -> Vec<(PathBuf, String)> {
     visited.insert(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
 
     while let Some(dir) = dirs.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -77,6 +89,8 @@ pub fn detect_languages(root: &Path) -> Vec<String> {
 
 pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
     let mut batch = TableBatch::new("");
+    let mut cache = read_cache(root);
+    let mut next_cache = HashMap::new();
     let mut warned_exts = std::collections::HashSet::new();
     for (path, relative) in walk_relative_files(root) {
         let Some(adapter) = adapter_for_path(&path) else {
@@ -86,16 +100,82 @@ pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
             }
             continue;
         };
+
+        let metadata = std::fs::metadata(&path)
+            .map_err(|e| format!("error: failed to stat {}: {e}", path.display()))?;
+        if let Some(key) = cache_key(&metadata) {
+            if let Some(cached) = cache.remove(&relative) {
+                if cached.matches(key, metadata.len()) {
+                    batch.extend(cached.batch.clone());
+                    next_cache.insert(relative, cached);
+                    continue;
+                }
+            }
+        }
+
         let source = std::fs::read_to_string(&path)
             .map_err(|e| format!("error: failed to read {}: {e}", path.display()))?;
         let file_batch = walk_source(adapter, relative, &source)
             .map_err(|e| format!("error: failed to parse {}: {e}", path.display()))?;
+        if let Some((modified_secs, modified_nanos)) = cache_key(&metadata) {
+            next_cache.insert(
+                file_batch.current_file.clone(),
+                CachedFile {
+                    modified_secs,
+                    modified_nanos,
+                    len: metadata.len(),
+                    batch: file_batch.clone(),
+                },
+            );
+        }
         batch.extend(file_batch);
     }
+    write_cache(root, &next_cache);
     for adapter in adapters() {
         adapter.second_pass(&mut batch, root);
     }
     Ok(batch)
+}
+
+impl CachedFile {
+    fn matches(&self, modified: (u64, u32), len: u64) -> bool {
+        self.modified_secs == modified.0 && self.modified_nanos == modified.1 && self.len == len
+    }
+}
+
+fn cache_key(metadata: &std::fs::Metadata) -> Option<(u64, u32)> {
+    let modified = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    Some((modified.as_secs(), modified.subsec_nanos()))
+}
+
+fn read_cache(root: &Path) -> HashMap<String, CachedFile> {
+    cache_path(root)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+fn write_cache(root: &Path, cache: &HashMap<String, CachedFile>) {
+    let Some(path) = cache_path(root) else { return };
+    let Some(parent) = path.parent() else { return };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    if let Ok(content) = serde_json::to_string(cache) {
+        let _ = std::fs::write(path, content);
+    }
+}
+
+fn cache_path(root: &Path) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let mut hasher = DefaultHasher::new();
+    root.to_string_lossy().hash(&mut hasher);
+    Some(
+        PathBuf::from(home)
+            .join(".cache")
+            .join("ql")
+            .join(format!("{:x}.json", hasher.finish())),
+    )
 }
 
 #[cfg(test)]

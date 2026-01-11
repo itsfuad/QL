@@ -28,6 +28,7 @@ pub enum TokenKind {
     Dot,
     LParen,
     RParen,
+    Semicolon,
     Star,
     Eq,
     NotEq,
@@ -66,6 +67,10 @@ pub fn lex(input: &str) -> Result<Vec<Token>, usize> {
             b')' => {
                 index += 1;
                 TokenKind::RParen
+            }
+            b';' => {
+                index += 1;
+                TokenKind::Semicolon
             }
             b'*' => {
                 index += 1;

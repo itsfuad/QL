@@ -8,7 +8,7 @@
 ## Phase 2 — Query engine
 - [x] Hand-written SQL parser
 - [x] Query planner + executor wired to DuckDB
-- [ ] File cache (mtime-based, `~/.cache/ql/`)
+- [x] File cache (mtime-based, `~/.cache/ql/`)
 
 ## Phase 3 — Adapters
 - [x] Go adapter complete (all tables, complexity, second-pass)
