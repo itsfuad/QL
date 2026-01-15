@@ -20,7 +20,7 @@
 ## Phase 4 — Interface
 - [x] CLI binary
 - [x] Watch mode
-- [ ] VS Code extension
+- [x] VS Code extension
 
 ## Phase 5 — Polish
 - [x] Output formats: table, JSON, CSV

@@ -2,9 +2,53 @@
   "name": "ql",
   "displayName": "ql",
   "version": "0.0.1",
+  "publisher": "itsfuad",
+  "description": "VS Code extension for querying codebases with ql",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.120.0"
   },
-  "main": "./out/extension.js"
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:ql.resultsView",
+    "onCommand:ql.runQuery"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ql.runQuery",
+        "title": "ql: Run Query"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ql",
+          "title": "ql",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ql": [
+        {
+          "id": "ql.resultsView",
+          "name": "Query Results"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "vscode:prepublish": "npm run compile",
+    "lint": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "@types/vscode": "1.120.0",
+    "typescript": "6.0.3"
+  }
 }
-

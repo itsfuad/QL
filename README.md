@@ -129,6 +129,7 @@ Single binary. No subprocess protocol. Rust CLI only.
 - Hand-written SQL parser (SELECT, FROM, JOIN, WHERE, ORDER BY, LIMIT, operators)
 - Planner maps SQL AST to DuckDB execution
 - CLI with table/JSON/CSV output and watch mode
+- VS Code extension sidebar for running queries and opening rows
 
 ## Development
 
