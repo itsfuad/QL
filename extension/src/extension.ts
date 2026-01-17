@@ -196,11 +196,6 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    const bundled = this.context.asAbsolutePath(path.join('bin', binaryName));
-    if (this.isExecutable(bundled)) {
-      return bundled;
-    }
-
     return undefined;
   }
 
@@ -255,16 +250,44 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       gap: 8px;
       margin-bottom: 12px;
     }
+    .query-editor {
+      position: relative;
+    }
+    .query-mirror,
     textarea {
       min-height: 120px;
-      resize: vertical;
       width: 100%;
       box-sizing: border-box;
       font: inherit;
-      color: inherit;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 8px;
+      border-radius: 2px;
+    }
+    .query-mirror {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      overflow: auto;
+      pointer-events: none;
+      color: var(--vscode-editor-foreground);
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-input-border, transparent);
-      padding: 8px;
+    }
+    .query-mirror .keyword {
+      color: var(--vscode-symbolKeywordForeground, #c586c0);
+      font-weight: 600;
+    }
+    textarea {
+      position: relative;
+      z-index: 1;
+      min-height: 120px;
+      resize: vertical;
+      color: transparent;
+      caret-color: var(--vscode-editor-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border, transparent);
     }
     .actions {
       display: flex;
@@ -325,7 +348,10 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div class="query">
-    <textarea id="query">${escapedQuery}</textarea>
+    <div class="query-editor">
+      <pre id="query-mirror" class="query-mirror" aria-hidden="true"></pre>
+      <textarea id="query" spellcheck="false">${escapedQuery}</textarea>
+    </div>
     <div class="actions">
       <button id="run">Run Query</button>
       <span class="meta" id="root"></span>
@@ -337,15 +363,47 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const queryInput = document.getElementById('query');
-    const runButton = document.getElementById('run');
-    const status = document.getElementById('status');
-    const error = document.getElementById('error');
-    const results = document.getElementById('results');
-    const root = document.getElementById('root');
+    const queryInput = document.getElementById('query') as HTMLTextAreaElement | null;
+    const queryMirror = document.getElementById('query-mirror') as HTMLPreElement | null;
+    const runButton = document.getElementById('run') as HTMLButtonElement | null;
+    const status = document.getElementById('status') as HTMLElement | null;
+    const error = document.getElementById('error') as HTMLElement | null;
+    const results = document.getElementById('results') as HTMLElement | null;
+    const root = document.getElementById('root') as HTMLElement | null;
+    const keywordPatterns = [
+      /\\b(order\\s+by|group\\s+by|left\\s+join|right\\s+join|inner\\s+join|outer\\s+join)\\b/gi,
+      /\\b(select|from|where|join|on|and|or|not|in|like|limit|asc|desc|as|distinct)\\b/gi,
+    ];
+
+    if (!queryInput || !queryMirror || !runButton || !status || !error || !results || !root) {
+      throw new Error('ql webview failed to initialize');
+    }
 
     function runQuery() {
       vscode.postMessage({ type: 'run', query: queryInput.value });
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function highlightQuery(text) {
+      let rendered = escapeHtml(text || '');
+      for (const pattern of keywordPatterns) {
+        rendered = rendered.replace(pattern, (match) => '<span class="keyword">' + match + '</span>');
+      }
+      return rendered || '<span class="meta">Type a query to run it.</span>';
+    }
+
+    function syncQueryMirror() {
+      queryMirror.innerHTML = highlightQuery(queryInput.value);
+      queryMirror.scrollTop = queryInput.scrollTop;
+      queryMirror.scrollLeft = queryInput.scrollLeft;
     }
 
     function renderTable(columns, rows) {
@@ -394,15 +452,6 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       return String(value);
     }
 
-    function escapeHtml(text) {
-      return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-    }
-
     function escapeAttr(text) {
       return escapeHtml(text);
     }
@@ -413,6 +462,9 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
         runQuery();
       }
     });
+    queryInput.addEventListener('input', syncQueryMirror);
+    queryInput.addEventListener('scroll', syncQueryMirror);
+    syncQueryMirror();
 
     window.addEventListener('message', (event) => {
       const message = event.data;

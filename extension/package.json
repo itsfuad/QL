@@ -1,7 +1,7 @@
 {
   "name": "ql",
   "displayName": "ql",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "publisher": "itsfuad",
   "description": "VS Code extension for querying codebases with ql",
   "license": "MIT",
