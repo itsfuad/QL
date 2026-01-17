@@ -252,6 +252,9 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
     }
     .query-editor {
       position: relative;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 2px;
     }
     .query-mirror,
     textarea {
@@ -263,7 +266,6 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       white-space: pre-wrap;
       word-break: break-word;
       padding: 8px;
-      border-radius: 2px;
     }
     .query-mirror {
       position: absolute;
@@ -272,8 +274,6 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       overflow: auto;
       pointer-events: none;
       color: var(--vscode-editor-foreground);
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border, transparent);
     }
     .query-mirror .keyword {
       color: var(--vscode-symbolKeywordForeground, #c586c0);
@@ -286,8 +286,12 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       resize: vertical;
       color: transparent;
       caret-color: var(--vscode-editor-foreground);
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border, transparent);
+      background: transparent;
+      border: none;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      -webkit-text-fill-color: transparent;
     }
     .actions {
       display: flex;
@@ -304,6 +308,11 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
     }
     button:hover {
       background: var(--vscode-button-hoverBackground);
+    }
+    button:disabled {
+      cursor: progress;
+      opacity: 0.7;
+      background: var(--vscode-button-background);
     }
     .meta {
       font-size: 12px;
@@ -363,13 +372,13 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const queryInput = document.getElementById('query') as HTMLTextAreaElement | null;
-    const queryMirror = document.getElementById('query-mirror') as HTMLPreElement | null;
-    const runButton = document.getElementById('run') as HTMLButtonElement | null;
-    const status = document.getElementById('status') as HTMLElement | null;
-    const error = document.getElementById('error') as HTMLElement | null;
-    const results = document.getElementById('results') as HTMLElement | null;
-    const root = document.getElementById('root') as HTMLElement | null;
+    const queryInput = document.getElementById('query');
+    const queryMirror = document.getElementById('query-mirror');
+    const runButton = document.getElementById('run');
+    const status = document.getElementById('status');
+    const error = document.getElementById('error');
+    const results = document.getElementById('results');
+    const root = document.getElementById('root');
     const keywordPatterns = [
       /\\b(order\\s+by|group\\s+by|left\\s+join|right\\s+join|inner\\s+join|outer\\s+join)\\b/gi,
       /\\b(select|from|where|join|on|and|or|not|in|like|limit|asc|desc|as|distinct)\\b/gi,
@@ -380,6 +389,7 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
     }
 
     function runQuery() {
+      setBusy(true);
       vscode.postMessage({ type: 'run', query: queryInput.value });
     }
 
@@ -404,6 +414,11 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
       queryMirror.innerHTML = highlightQuery(queryInput.value);
       queryMirror.scrollTop = queryInput.scrollTop;
       queryMirror.scrollLeft = queryInput.scrollLeft;
+    }
+
+    function setBusy(isBusy) {
+      runButton.disabled = isBusy;
+      runButton.textContent = isBusy ? 'Running...' : 'Run Query';
     }
 
     function renderTable(columns, rows) {
@@ -472,6 +487,7 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
         status.textContent = message.message;
         error.hidden = true;
         error.textContent = '';
+        setBusy(message.message === 'Running query...');
         return;
       }
 
@@ -479,6 +495,7 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
         status.textContent = 'Error.';
         error.hidden = false;
         error.textContent = message.message;
+        setBusy(false);
         return;
       }
 
@@ -488,6 +505,7 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
         error.textContent = '';
         root.textContent = message.root;
         renderTable(message.columns, message.rows);
+        setBusy(false);
       }
     });
   </script>
