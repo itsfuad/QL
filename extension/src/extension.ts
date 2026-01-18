@@ -87,7 +87,7 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
 
     const binary = this.findBinary();
     if (!binary) {
-      this.postError('Could not find the ql binary in PATH or extension/bin/.');
+      this.postError('Could not find ql on PATH. Restart VS Code after installing ql if needed.');
       return;
     }
 
@@ -186,17 +186,45 @@ class QlResultsViewProvider implements vscode.WebviewViewProvider {
   }
 
   private findBinary(): string | undefined {
-    const binaryName = DEFAULT_BINARY_NAME;
-    const envPath = process.env.PATH ?? '';
+    const envBinary = this.findBinaryInPath(process.env.PATH ?? '');
+    if (envBinary) {
+      return envBinary;
+    }
 
-    for (const dir of envPath.split(path.delimiter)) {
-      const candidate = path.join(dir, binaryName);
+    const shellBinary = this.findBinaryInPath(this.shellPath());
+    if (shellBinary) {
+      return shellBinary;
+    }
+
+    return undefined;
+  }
+
+  private findBinaryInPath(searchPath: string): string | undefined {
+    for (const dir of searchPath.split(path.delimiter)) {
+      if (!dir) {
+        continue;
+      }
+
+      const candidate = path.join(dir, DEFAULT_BINARY_NAME);
       if (this.isExecutable(candidate)) {
         return candidate;
       }
     }
 
     return undefined;
+  }
+
+  private shellPath(): string {
+    try {
+      const shell = process.env.SHELL || '/bin/sh';
+      const output = cp.execFileSync(shell, ['-lc', 'printf %s "$PATH"'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return output.trim();
+    } catch {
+      return '';
+    }
   }
 
   private isExecutable(candidate: string): boolean {
