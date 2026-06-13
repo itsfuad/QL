@@ -1,6 +1,6 @@
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use ql_ast::{FunctionRow, TableBatch};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const ENGINE_NAME: &str = "ql-engine";
@@ -9,6 +9,41 @@ pub const ENGINE_NAME: &str = "ql-engine";
 pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct EngineRequest {
+    pub query: String,
+    pub root: String,
+    pub format: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EngineResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub columns: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<Vec<Vec<Value>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl EngineResponse {
+    pub fn from_result(result: QueryResult) -> Self {
+        Self {
+            columns: Some(result.columns),
+            rows: Some(result.rows),
+            error: None,
+        }
+    }
+
+    pub fn from_error(error: impl Into<String>) -> Self {
+        Self {
+            columns: None,
+            rows: None,
+            error: Some(error.into()),
+        }
+    }
 }
 
 pub fn select_functions(batch: &TableBatch) -> Result<Vec<FunctionRow>, duckdb::Error> {
@@ -223,7 +258,7 @@ fn insert_batch(connection: &Connection, batch: &TableBatch) -> Result<(), duckd
 mod tests {
     use ql_ast::{FunctionRow, TableBatch};
 
-    use super::{QueryResult, query_all_functions, select_functions};
+    use super::{query_all_functions, select_functions, QueryResult};
 
     #[test]
     fn reads_functions_from_duckdb() {
