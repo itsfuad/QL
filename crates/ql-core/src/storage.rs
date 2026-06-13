@@ -1,4 +1,4 @@
-use duckdb::{params, Connection};
+use duckdb::{Connection, params};
 use ql_ast::TableBatch;
 
 pub fn open_batch(batch: &TableBatch) -> Result<Connection, duckdb::Error> {

@@ -6,4 +6,4 @@ pub use ast::{
     BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
     SelectStatement, TableRef, UnaryOperator,
 };
-pub use parser::{parse_query, ParseError};
+pub use parser::{ParseError, parse_query};

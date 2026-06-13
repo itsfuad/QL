@@ -2,7 +2,7 @@ use super::ast::{
     BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
     SelectStatement, TableRef, UnaryOperator,
 };
-use super::lexer::{lex, Token, TokenKind};
+use super::lexer::{Token, TokenKind, lex};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -414,7 +414,7 @@ mod tests {
         BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
         SelectStatement, TableRef, UnaryOperator,
     };
-    use super::{parse_query, ParseError};
+    use super::{ParseError, parse_query};
 
     #[test]
     fn parses_select_wildcard() {

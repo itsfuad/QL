@@ -1273,6 +1273,7 @@ name = "ql-core"
 version = "0.1.0"
 dependencies = [
  "duckdb",
+ "ql-adapters",
  "ql-ast",
  "serde",
  "serde_json",

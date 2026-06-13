@@ -3,8 +3,8 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use ql_adapters::GoAdapter;
-use ql_ast::{walk_source, TableBatch};
-use ql_core::{query_all_functions, EngineRequest, EngineResponse};
+use ql_ast::{TableBatch, walk_source};
+use ql_core::{EngineRequest, EngineResponse, execute_query, parse_query};
 
 fn main() {
     if let Err(error) = run() {
@@ -48,21 +48,16 @@ fn run() -> Result<(), String> {
 }
 
 fn execute_request(request: EngineRequest) -> Result<EngineResponse, String> {
-    if request.query.trim().to_ascii_lowercase() != "select * from functions" {
-        return Err(
-            "error: only \"SELECT * FROM functions\" is supported before SQL parser lands"
-                .to_string(),
-        );
-    }
-
     let root = PathBuf::from(&request.root);
     if !root.exists() {
         return Err(format!("error: path \"{}\" does not exist", request.root));
     }
 
+    let statement = parse_query(&request.query)
+        .map_err(|error| format!("error: {} at position {}", error.message, error.position))?;
     let mut batch = TableBatch::new("");
     collect_go_files(&root, &root, &mut batch)?;
-    let result = query_all_functions(&batch).map_err(|error| format!("internal error: {error}"))?;
+    let result = execute_query(&batch, &statement).map_err(|error| error.to_string())?;
 
     Ok(EngineResponse::from_result(result))
 }
