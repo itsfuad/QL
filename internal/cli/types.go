@@ -1,4 +1,4 @@
-package main
+package cli
 
 type engineRequest struct {
 	Query  string `json:"query"`
