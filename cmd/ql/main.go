@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 type engineRequest struct {
@@ -29,10 +31,11 @@ type engineResponse struct {
 func main() {
 	format := flag.String("format", "table", "output format")
 	langs := flag.Bool("langs", false, "list supported languages")
+	watch := flag.Bool("watch", false, "rerun query on file changes")
 	flag.Parse()
 
 	if *langs {
-		fmt.Println("go")
+		fmt.Println(strings.Join(supportedLanguages(), "\n"))
 		return
 	}
 
@@ -62,6 +65,13 @@ func main() {
 	if err := validateFormat(request.Format); err != nil {
 		exitf("error: %v", err)
 	}
+	if *watch {
+		if err := runWatch(request); err != nil {
+			exitf("error: %v", err)
+		}
+		return
+	}
+
 	response, err := runEngine(request)
 	if err != nil {
 		exitf("error: %v", err)
@@ -73,6 +83,49 @@ func main() {
 	if err := printResponse(os.Stdout, request.Format, response); err != nil {
 		exitf("error: %v", err)
 	}
+}
+
+func runWatch(request engineRequest) error {
+	snapshot, err := scanSourceSnapshot(request.Root)
+	if err != nil {
+		return err
+	}
+	if err := renderQuery(request); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		nextSnapshot, err := scanSourceSnapshot(request.Root)
+		if err != nil {
+			return err
+		}
+		if snapshotsEqual(snapshot, nextSnapshot) {
+			continue
+		}
+
+		snapshot = nextSnapshot
+		if err := renderQuery(request); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func renderQuery(request engineRequest) error {
+	response, err := runEngine(request)
+	if err != nil {
+		return err
+	}
+	if response.Error != "" {
+		return fmt.Errorf("%s", response.Error)
+	}
+
+	fmt.Print("\033[H\033[2J")
+	return printResponse(os.Stdout, request.Format, response)
 }
 
 func runEngine(request engineRequest) (engineResponse, error) {
@@ -139,6 +192,60 @@ func engineBinaryPath() (string, error) {
 	}
 
 	return enginePath, nil
+}
+
+func scanSourceSnapshot(root string) (map[string]time.Time, error) {
+	snapshot := make(map[string]time.Time)
+
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !isSourceFile(path) {
+			return nil
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		snapshot[relative] = info.ModTime()
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return snapshot, nil
+}
+
+func isSourceFile(path string) bool {
+	switch filepath.Ext(path) {
+	case ".go", ".rs", ".ts", ".py":
+		return true
+	default:
+		return false
+	}
+}
+
+func snapshotsEqual(left, right map[string]time.Time) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for path, leftTime := range left {
+		rightTime, ok := right[path]
+		if !ok || !leftTime.Equal(rightTime) {
+			return false
+		}
+	}
+	return true
 }
 
 func printResponse(writer io.Writer, format string, response engineResponse) error {
@@ -228,6 +335,12 @@ func printTable(writer io.Writer, response engineResponse) {
 		}
 		fmt.Fprintln(writer)
 	}
+}
+
+func supportedLanguages() []string {
+	langs := []string{"go"}
+	sort.Strings(langs)
+	return langs
 }
 
 func exitf(format string, args ...interface{}) {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestValidateFormat(t *testing.T) {
@@ -17,6 +18,49 @@ func TestValidateFormat(t *testing.T) {
 
 	if err := validateFormat("xml"); err == nil {
 		t.Fatal("validateFormat should reject unsupported formats")
+	}
+}
+
+func TestScanSourceSnapshot(t *testing.T) {
+	root := t.TempDir()
+	goFile := filepath.Join(root, "main.go")
+	txtFile := filepath.Join(root, "notes.txt")
+	if err := os.WriteFile(goFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(txtFile, []byte("ignore"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	snapshot, err := scanSourceSnapshot(root)
+	if err != nil {
+		t.Fatalf("scanSourceSnapshot returned error: %v", err)
+	}
+
+	if len(snapshot) != 1 {
+		t.Fatalf("expected 1 source file, got %d", len(snapshot))
+	}
+	if _, ok := snapshot["main.go"]; !ok {
+		t.Fatalf("expected main.go in snapshot: %#v", snapshot)
+	}
+}
+
+func TestSnapshotsEqual(t *testing.T) {
+	now := time.Now()
+	later := now.Add(time.Second)
+
+	if !snapshotsEqual(
+		map[string]time.Time{"main.go": now},
+		map[string]time.Time{"main.go": now},
+	) {
+		t.Fatal("expected equal snapshots")
+	}
+
+	if snapshotsEqual(
+		map[string]time.Time{"main.go": now},
+		map[string]time.Time{"main.go": later},
+	) {
+		t.Fatal("expected different snapshots when mtime changes")
 	}
 }
 

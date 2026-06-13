@@ -1,5 +1,6 @@
 /target/
 /extension/out/
 /extension/node_modules/
+/milestone.md
 
 .DS_Store
