@@ -1,0 +1,10 @@
+{
+  "name": "ql",
+  "displayName": "ql",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "./out/extension.js"
+}
+

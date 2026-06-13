@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "crates/ql-ast",
+    "crates/ql-adapters",
+    "crates/ql-core",
+]
+resolver = "2"
+
