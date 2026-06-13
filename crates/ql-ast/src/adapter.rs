@@ -22,6 +22,8 @@ pub fn walk_source(
         return Ok(batch);
     };
 
+    // Tree-sitter exposes cursor-based traversal. We walk every node once and let
+    // adapter decide whether current node matters for shared schema.
     let mut cursor = tree.walk();
     walk_node(adapter, &mut cursor, source, &mut batch);
     Ok(batch)
@@ -37,6 +39,8 @@ fn walk_node(
         adapter.map_node(cursor.node(), source, rows);
 
         if cursor.goto_first_child() {
+            // Reuse same cursor while descending to avoid rebuilding traversal state
+            // for every subtree.
             walk_node(adapter, cursor, source, rows);
             cursor.goto_parent();
         }
