@@ -39,19 +39,6 @@ Project has four layers. They stay separate:
 4. Language adapters
    One Rust adapter per language
 
-## Repo Layout
-
-```text
-ql/
-├── crates/
-│   ├── ql-core/
-│   ├── ql-ast/
-│   └── ql-adapters/
-├── cmd/ql/
-├── extension/
-└── schema/
-```
-
 ## Current Status
 
 Current repo contains:

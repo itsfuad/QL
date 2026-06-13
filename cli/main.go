@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/itsfuad/ql/internal/cli"
+	"github.com/itsfuad/ql/cli/internal/cli"
 )
 
 func main() {
