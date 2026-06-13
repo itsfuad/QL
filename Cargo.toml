@@ -3,6 +3,7 @@ members = [
     "crates/ql-ast",
     "crates/ql-adapters",
     "crates/ql-core",
+    "crates/ql-cli",
 ]
 resolver = "2"
 
