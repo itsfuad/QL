@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn selects_requested_columns() {
         let mut batch = sample_batch();
-        batch.functions.push(function_row("main.go", 4, "main", 3));
+        batch.functions.push(function_row("main.rs", 4, "main", 3));
 
         let result = execute(
             "SELECT name, complexity FROM functions ORDER BY line",
@@ -153,9 +153,9 @@ mod tests {
     #[test]
     fn filters_orders_and_limits() {
         let mut batch = sample_batch();
-        batch.functions.push(function_row("main.go", 4, "main", 3));
-        batch.functions.push(function_row("math.go", 8, "Add", 9));
-        batch.functions.push(function_row("math.go", 12, "Sub", 5));
+        batch.functions.push(function_row("main.rs", 4, "main", 3));
+        batch.functions.push(function_row("math.rs", 8, "Add", 9));
+        batch.functions.push(function_row("math.rs", 12, "Sub", 5));
 
         let result = execute(
             "SELECT name, complexity FROM functions WHERE complexity > 4 ORDER BY complexity DESC LIMIT 2",
@@ -174,9 +174,9 @@ mod tests {
     #[test]
     fn joins_related_tables() {
         let mut batch = sample_batch();
-        batch.functions.push(function_row("main.go", 4, "main", 3));
+        batch.functions.push(function_row("main.rs", 4, "main", 3));
         batch.calls.push(CallRow {
-            file: "main.go".to_string(),
+            file: "main.rs".to_string(),
             line: 5,
             caller: "main".to_string(),
             callee: "fmt.Println".to_string(),
@@ -200,9 +200,9 @@ mod tests {
     #[test]
     fn supports_string_predicates() {
         let mut batch = sample_batch();
-        batch.functions.push(function_row("main.go", 4, "main", 3));
-        batch.functions.push(function_row("math.go", 8, "Add", 2));
-        batch.functions.push(function_row("math.go", 12, "Sub", 2));
+        batch.functions.push(function_row("main.rs", 4, "main", 3));
+        batch.functions.push(function_row("math.rs", 8, "Add", 2));
+        batch.functions.push(function_row("math.rs", 12, "Sub", 2));
 
         let result = execute(
             "SELECT name FROM functions WHERE name IN ('main', 'Sub') ORDER BY name",
@@ -237,6 +237,6 @@ mod tests {
     }
 
     fn sample_batch() -> TableBatch {
-        TableBatch::new("ignored.go")
+        TableBatch::new("ignored.rs")
     }
 }

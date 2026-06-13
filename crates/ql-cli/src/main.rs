@@ -10,7 +10,7 @@ mod source;
 mod watch;
 
 use format::{format_response, supported_languages, validate_format};
-use source::collect_source_batch;
+use source::{collect_source_batch, detect_languages};
 use watch::run_watch;
 
 fn main() {
@@ -87,6 +87,12 @@ fn main() {
             process::exit(1);
         }
         return;
+    }
+
+    // Detect languages present before engine call
+    let detected = detect_languages(&root);
+    if detected.is_empty() {
+        eprintln!("warning: no supported source files found in {}", root.display());
     }
 
     let statement = parse_query(query).unwrap_or_else(|e| {

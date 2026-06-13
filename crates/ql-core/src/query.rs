@@ -72,9 +72,9 @@ mod tests {
 
     #[test]
     fn reads_functions_from_duckdb() {
-        let mut batch = TableBatch::new("ignored.go");
+        let mut batch = TableBatch::new("ignored.rs");
         batch.functions.push(FunctionRow {
-            file: "main.go".to_string(),
+            file: "main.rs".to_string(),
             line: 4,
             name: "main".to_string(),
             visibility: "private".to_string(),
@@ -84,7 +84,7 @@ mod tests {
             has_test: false,
         });
         batch.functions.push(FunctionRow {
-            file: "math.go".to_string(),
+            file: "math.rs".to_string(),
             line: 8,
             name: "Add".to_string(),
             visibility: "public".to_string(),
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn handles_empty_function_table() {
-        let batch = TableBatch::new("empty.go");
+        let batch = TableBatch::new("empty.rs");
 
         let rows = select_functions(&batch).expect("duckdb should handle empty rows");
 
@@ -110,9 +110,9 @@ mod tests {
 
     #[test]
     fn converts_functions_to_protocol_shape() {
-        let mut batch = TableBatch::new("ignored.go");
+        let mut batch = TableBatch::new("ignored.rs");
         batch.functions.push(FunctionRow {
-            file: "main.go".to_string(),
+            file: "main.rs".to_string(),
             line: 4,
             name: "main".to_string(),
             visibility: "private".to_string(),
@@ -129,7 +129,7 @@ mod tests {
             QueryResult {
                 columns: function_columns(),
                 rows: vec![vec![
-                    Value::String("main.go".to_string()),
+                    Value::String("main.rs".to_string()),
                     Value::from(4),
                     Value::String("main".to_string()),
                     Value::String("private".to_string()),

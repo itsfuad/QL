@@ -15,7 +15,7 @@ ql "SELECT name, file, line
 
 ## What It Extracts
 
-All language adapters populate same shared schema:
+Language adapters populate the shared schema:
 
 - `functions`
 - `calls`
@@ -32,19 +32,19 @@ Schema source lives in [schema/tables.json](schema/tables.json).
 ql/
 ├── crates/
 │   ├── ql-ast/         AST bridge, Tree-sitter walk, schema mapper
-│   ├── ql-adapters/    One Rust adapter per language
+│   ├── ql-adapters/    Tree-sitter adapter implementations per language
 │   ├── ql-core/        Query engine, SQL parser, planner, DuckDB execution
 │   └── ql-cli/         CLI binary — arg parsing, output formatting, watch mode
 └── extension/          VS Code extension (TypeScript)
 ```
 
-Single binary. No subprocess protocol. No Go.
+Single binary. No subprocess protocol. Rust CLI only.
 
 ## Current Status
 
 - Shared row types and `TableBatch`
 - Language adapter trait and Tree-sitter walk path
-- Go adapter for function declarations
+- Go, Rust, TypeScript, and Python adapter support
 - DuckDB-backed in-memory schema with multi-table ingest
 - Hand-written SQL parser (SELECT, FROM, JOIN, WHERE, ORDER BY, LIMIT, operators)
 - Planner maps SQL AST to DuckDB execution

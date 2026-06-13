@@ -6,9 +6,14 @@ use ql_core::execute::execute_query;
 use ql_core::sql::parse_query;
 
 use crate::format::{clear_screen, format_response};
-use crate::source::{collect_source_batch, scan_snapshot, snapshots_equal};
+use crate::source::{collect_source_batch, detect_languages, scan_snapshot, snapshots_equal};
 
 pub fn run_watch(query: &str, root: &Path, format: &str) -> Result<(), String> {
+    let detected = detect_languages(root);
+    if detected.is_empty() {
+        eprintln!("warning: no supported source files found in {}", root.display());
+    }
+
     let snapshot = scan_snapshot(root)?;
     render_query(query, root, format)?;
 

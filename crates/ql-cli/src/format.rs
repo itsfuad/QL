@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use ql_adapters::supported_languages as adapter_supported_languages;
 use ql_core::protocol::QueryResult;
 
 pub fn validate_format(format: &str) -> Result<(), String> {
@@ -10,7 +11,7 @@ pub fn validate_format(format: &str) -> Result<(), String> {
 }
 
 pub fn supported_languages() -> Vec<String> {
-    vec!["go".to_string()]
+    adapter_supported_languages()
 }
 
 pub fn format_response(

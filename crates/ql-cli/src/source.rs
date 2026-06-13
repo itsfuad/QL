@@ -1,56 +1,52 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use ql_adapters::GoAdapter;
+use ql_adapters::{adapter_for_path, adapters};
 use ql_ast::{TableBatch, walk_source};
 
 pub fn is_source_file(path: &Path) -> bool {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("go" | "rs" | "ts" | "py") => true,
-        _ => false,
+    adapter_for_path(path).is_some()
+}
+
+fn walk_relative_files(root: &Path) -> Vec<(PathBuf, String)> {
+    let mut files = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    let mut visited = std::collections::HashSet::new();
+    visited.insert(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
+
+    while let Some(dir) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let canon = path.canonicalize().unwrap_or_else(|_| path);
+                if visited.insert(canon.clone()) && dirs.len() < 1000 {
+                    dirs.push(canon);
+                }
+                continue;
+            }
+            let relative = match path.strip_prefix(root) {
+                Ok(r) => r.to_string_lossy().into_owned(),
+                Err(_) => continue,
+            };
+            files.push((path, relative));
+        }
     }
+    files
 }
 
 pub fn scan_snapshot(root: &Path) -> Result<HashMap<String, SystemTime>, String> {
     let mut snapshot = HashMap::new();
-    collect_entries(root, root, &mut snapshot)?;
-    Ok(snapshot)
-}
-
-fn collect_entries(
-    root: &Path,
-    dir: &Path,
-    snapshot: &mut HashMap<String, SystemTime>,
-) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("error: {e}"))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("error: {e}"))?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            collect_entries(root, &path, snapshot)?;
-            continue;
-        }
-
+    for (path, relative) in walk_relative_files(root) {
         if !is_source_file(&path) {
             continue;
         }
-
-        let metadata = entry.metadata().map_err(|e| format!("error: {e}"))?;
+        let metadata = std::fs::metadata(&path).map_err(|e| format!("error: {e}"))?;
         let modified = metadata.modified().map_err(|e| format!("error: {e}"))?;
-
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|e| e.to_string())?
-            .to_string_lossy()
-            .into_owned();
-
         snapshot.insert(relative, modified);
     }
-
-    Ok(())
+    Ok(snapshot)
 }
 
 pub fn snapshots_equal(
@@ -62,53 +58,44 @@ pub fn snapshots_equal(
     }
     for (path, left_time) in left {
         match right.get(path) {
-            Some(right_time) => {
-                if left_time != right_time {
-                    return false;
-                }
-            }
-            None => return false,
+            Some(right_time) if left_time == right_time => {}
+            _ => return false,
         }
     }
     true
 }
 
-pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
-    let mut batch = TableBatch::new("");
-    collect_go_files(root, root, &mut batch)?;
-    Ok(batch)
+pub fn detect_languages(root: &Path) -> Vec<String> {
+    let mut langs = std::collections::BTreeSet::new();
+    for (path, _) in walk_relative_files(root) {
+        if let Some(adapter) = adapter_for_path(&path) {
+            langs.insert(adapter.language_name().to_string());
+        }
+    }
+    langs.into_iter().collect()
 }
 
-fn collect_go_files(root: &Path, path: &Path, batch: &mut TableBatch) -> Result<(), String> {
-    let entries = std::fs::read_dir(path).map_err(|e| format!("error: {e}"))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("error: {e}"))?;
-        let entry_path = entry.path();
-
-        if entry_path.is_dir() {
-            collect_go_files(root, &entry_path, batch)?;
+pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
+    let mut batch = TableBatch::new("");
+    let mut warned_exts = std::collections::HashSet::new();
+    for (path, relative) in walk_relative_files(root) {
+        let Some(adapter) = adapter_for_path(&path) else {
+            let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+            if warned_exts.insert(ext.to_string()) {
+                eprintln!("warning: no adapter for .{ext}, skipping");
+            }
             continue;
-        }
-
-        if entry_path.extension().and_then(|ext| ext.to_str()) != Some("go") {
-            continue;
-        }
-
-        let source = std::fs::read_to_string(&entry_path)
-            .map_err(|e| format!("error: failed to read {}: {e}", entry_path.display()))?;
-        let relative = entry_path
-            .strip_prefix(root)
-            .map_err(|e| e.to_string())?
-            .to_string_lossy()
-            .into_owned();
-        let file_batch = walk_source(&GoAdapter, relative, &source)
-            .map_err(|e| format!("error: failed to parse {}: {e}", entry_path.display()))?;
-
+        };
+        let source = std::fs::read_to_string(&path)
+            .map_err(|e| format!("error: failed to read {}: {e}", path.display()))?;
+        let file_batch = walk_source(adapter, relative, &source)
+            .map_err(|e| format!("error: failed to parse {}: {e}", path.display()))?;
         batch.extend(file_batch);
     }
-
-    Ok(())
+    for adapter in adapters() {
+        adapter.second_pass(&mut batch, root);
+    }
+    Ok(batch)
 }
 
 #[cfg(test)]
@@ -118,10 +105,44 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn detects_languages_in_directory() {
+        let root = std::env::temp_dir().join("ql_test_detect_langs");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp dir");
+        fs::write(root.join("main.go"), "package main\n").expect("write");
+        fs::write(root.join("lib.rs"), "fn main() {}\n").expect("write");
+        fs::write(root.join("app.ts"), "export function run() {}\n").expect("write");
+        fs::write(root.join("script.py"), "def run():\n    return 1\n").expect("write");
+        fs::write(root.join("notes.txt"), "ignore").expect("write");
+
+        let langs = detect_languages(&root);
+        assert!(langs.contains(&"go".to_string()));
+        assert!(langs.contains(&"rust".to_string()));
+        assert!(langs.contains(&"typescript".to_string()));
+        assert!(langs.contains(&"python".to_string()));
+        assert_eq!(langs.len(), 4);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn detects_no_languages_in_empty_dir() {
+        let root = std::env::temp_dir().join("ql_test_empty_detect");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp dir");
+
+        let langs = detect_languages(&root);
+        assert!(langs.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn detects_source_extensions() {
         assert!(is_source_file(Path::new("main.go")));
         assert!(is_source_file(Path::new("lib.rs")));
         assert!(is_source_file(Path::new("app.ts")));
+        assert!(is_source_file(Path::new("app.tsx")));
         assert!(is_source_file(Path::new("test.py")));
         assert!(!is_source_file(Path::new("notes.txt")));
         assert!(!is_source_file(Path::new("data.json")));
@@ -149,13 +170,13 @@ mod tests {
         let later = now.checked_add(Duration::from_secs(1)).unwrap();
 
         let mut left = HashMap::new();
-        left.insert("main.go".to_string(), now);
+        left.insert("lib.rs".to_string(), now);
 
         let mut right_same = HashMap::new();
-        right_same.insert("main.go".to_string(), now);
+        right_same.insert("lib.rs".to_string(), now);
 
         let mut right_diff = HashMap::new();
-        right_diff.insert("main.go".to_string(), later);
+        right_diff.insert("lib.rs".to_string(), later);
 
         assert!(snapshots_equal(&left, &right_same));
         assert!(!snapshots_equal(&left, &right_diff));
@@ -166,11 +187,11 @@ mod tests {
         let now = SystemTime::now();
 
         let mut left = HashMap::new();
-        left.insert("main.go".to_string(), now);
+        left.insert("lib.rs".to_string(), now);
 
         let mut right = HashMap::new();
-        right.insert("main.go".to_string(), now);
-        right.insert("lib.go".to_string(), now);
+        right.insert("lib.rs".to_string(), now);
+        right.insert("mod.rs".to_string(), now);
 
         assert!(!snapshots_equal(&left, &right));
     }

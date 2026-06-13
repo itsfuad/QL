@@ -7,4 +7,6 @@ edition = "2024"
 ql-ast = { path = "../ql-ast" }
 tree-sitter = "0.26.9"
 tree-sitter-go = "0.25.0"
-
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = "0.23.2"
