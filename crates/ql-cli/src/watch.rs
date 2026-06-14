@@ -37,8 +37,7 @@ pub fn run_watch(query: &str, root: &Path, format: &str) -> Result<(), String> {
 }
 
 fn render_query(query: &str, root: &Path, format: &str) -> Result<(), String> {
-    let statement = parse_query(query)
-        .map_err(|e| format!("error: {} at position {}", e.message, e.position))?;
+    let statement = parse_query(query).map_err(|e| e.render("query.sql", query))?;
     let batch = collect_source_batch(root)?;
     let result = execute_query(&batch, &statement).map_err(|e| e.to_string())?;
 

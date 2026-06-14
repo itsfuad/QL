@@ -2,24 +2,34 @@
 pub struct Token {
     pub kind: TokenKind,
     pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     Select,
+    Distinct,
     From,
+    Group,
+    Is,
     Join,
     On,
     Where,
+    Having,
     Order,
     By,
     Limit,
     Asc,
     Desc,
+    As,
     And,
     Or,
     Not,
     In,
+    Between,
+    Null,
+    True,
+    False,
     Like,
     Identifier(String),
     Integer(u64),
@@ -150,7 +160,11 @@ pub fn lex(input: &str) -> Result<Vec<Token>, usize> {
             _ => return Err(start),
         };
 
-        tokens.push(Token { kind, start });
+        tokens.push(Token {
+            kind,
+            start,
+            end: index,
+        });
     }
 
     Ok(tokens)
@@ -159,19 +173,28 @@ pub fn lex(input: &str) -> Result<Vec<Token>, usize> {
 fn keyword_or_identifier(value: &str) -> TokenKind {
     match value.to_ascii_uppercase().as_str() {
         "SELECT" => TokenKind::Select,
+        "DISTINCT" => TokenKind::Distinct,
         "FROM" => TokenKind::From,
+        "GROUP" => TokenKind::Group,
+        "IS" => TokenKind::Is,
         "JOIN" => TokenKind::Join,
         "ON" => TokenKind::On,
         "WHERE" => TokenKind::Where,
+        "HAVING" => TokenKind::Having,
         "ORDER" => TokenKind::Order,
         "BY" => TokenKind::By,
         "LIMIT" => TokenKind::Limit,
         "ASC" => TokenKind::Asc,
         "DESC" => TokenKind::Desc,
+        "AS" => TokenKind::As,
+        "NULL" => TokenKind::Null,
+        "TRUE" => TokenKind::True,
+        "FALSE" => TokenKind::False,
         "AND" => TokenKind::And,
         "OR" => TokenKind::Or,
         "NOT" => TokenKind::Not,
         "IN" => TokenKind::In,
+        "BETWEEN" => TokenKind::Between,
         "LIKE" => TokenKind::Like,
         _ => TokenKind::Identifier(value.to_string()),
     }
