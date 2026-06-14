@@ -376,10 +376,12 @@ enum TokenMatcher {
 
 impl TokenMatcher {
     fn matches(self, token: Option<&Token>) -> bool {
+        let Some(kind) = token.map(|token| &token.kind) else {
+            return false;
+        };
         matches!(
-            token.map(|token| &token.kind),
-            Some(kind) if match (self, kind) {
-                (Self::Select, TokenKind::Select)
+            (self, kind),
+            (Self::Select, TokenKind::Select)
                 | (Self::From, TokenKind::From)
                 | (Self::Join, TokenKind::Join)
                 | (Self::On, TokenKind::On)
@@ -405,9 +407,7 @@ impl TokenMatcher {
                 | (Self::Gt, TokenKind::Gt)
                 | (Self::Lt, TokenKind::Lt)
                 | (Self::Gte, TokenKind::Gte)
-                | (Self::Lte, TokenKind::Lte) => true,
-                _ => false,
-            }
+                | (Self::Lte, TokenKind::Lte)
         )
     }
 }

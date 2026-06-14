@@ -39,28 +39,47 @@ fn resolve_implements(batch: &mut TableBatch) {
     }
 }
 
+/// Attaches each comment to the nearest function or struct declared after it in the
+/// same file (ties go to the function, matching the previous row-by-row scan).
+///
+/// Rather than scanning every function/struct for every comment (O(C * (F + S)),
+/// which dominates `second_pass` on large batches), this groups declarations by file
+/// once into a line-sorted list and binary-searches it per comment: O((C + F + S)
+/// log(F + S)) overall.
 fn resolve_comment_attachments(batch: &mut TableBatch) {
-    for comment in &mut batch.comments {
-        let nearest_function = batch
-            .functions
-            .iter()
-            .filter(|row| row.file == comment.file && row.line > comment.line)
-            .min_by_key(|row| row.line);
-        let nearest_struct = batch
-            .structs
-            .iter()
-            .filter(|row| row.file == comment.file && row.line > comment.line)
-            .min_by_key(|row| row.line);
+    // Tie-break tag: functions sort before structs on an equal line, so a
+    // `partition_point` lookup reproduces the original "function wins on tie" rule.
+    const FUNCTION_TAG: u8 = 0;
+    const STRUCT_TAG: u8 = 1;
 
-        comment.attached_to = match (nearest_function, nearest_struct) {
-            (Some(function), None) => function.name.clone(),
-            (None, Some(struct_row)) => struct_row.name.clone(),
-            (Some(function), Some(struct_row)) if function.line <= struct_row.line => {
-                function.name.clone()
-            }
-            (_, Some(struct_row)) => struct_row.name.clone(),
-            _ => String::new(),
-        };
+    let mut definitions_by_file: HashMap<&str, Vec<(usize, u8, &str)>> = HashMap::new();
+
+    for function in &batch.functions {
+        definitions_by_file
+            .entry(function.file.as_str())
+            .or_default()
+            .push((function.line, FUNCTION_TAG, function.name.as_str()));
+    }
+    for struct_row in &batch.structs {
+        definitions_by_file
+            .entry(struct_row.file.as_str())
+            .or_default()
+            .push((struct_row.line, STRUCT_TAG, struct_row.name.as_str()));
+    }
+
+    for definitions in definitions_by_file.values_mut() {
+        definitions.sort_unstable_by_key(|&(line, tag, _)| (line, tag));
+    }
+
+    for comment in &mut batch.comments {
+        comment.attached_to = definitions_by_file
+            .get(comment.file.as_str())
+            .and_then(|definitions| {
+                let index = definitions.partition_point(|&(line, _, _)| line <= comment.line);
+                definitions.get(index)
+            })
+            .map(|&(_, _, name)| name.to_string())
+            .unwrap_or_default();
     }
 }
 
