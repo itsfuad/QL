@@ -1,6 +1,6 @@
 use super::ast::{
-    BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
-    SelectStatement, TableRef, UnaryOperator,
+    BinaryOperator, Expr, Join, Literal, OrderBy, OrderDirection, SelectItem, SelectStatement,
+    TableRef, UnaryOperator,
 };
 use super::diagnostic::{Diagnostic, Label, Severity, SourceFile, Span};
 use super::lexer::{Token, TokenKind, lex};
@@ -80,29 +80,32 @@ impl Parser {
     }
 
     fn parse_select(&mut self) -> Result<SelectStatement, ParseError> {
-        self.expect_keyword(TokenMatcher::Select, "expected SELECT")?;
+        self.expect_kind(|kind| matches!(kind, TokenKind::Select), "expected SELECT")?;
         let select = self.parse_select_list()?;
-        self.expect_keyword(TokenMatcher::From, "expected FROM")?;
+        self.expect_kind(|kind| matches!(kind, TokenKind::From), "expected FROM")?;
         let from = self.parse_table_ref()?;
         let joins = self.parse_joins()?;
-        let where_clause = if self.matches(TokenMatcher::Where) {
+        let where_clause = if self.matches_kind(|kind| matches!(kind, TokenKind::Where)) {
             Some(self.parse_expression()?)
         } else {
             None
         };
-        let order_by = if self.matches(TokenMatcher::Order) {
-            self.expect_keyword(TokenMatcher::By, "expected BY after ORDER")?;
+        let order_by = if self.matches_kind(|kind| matches!(kind, TokenKind::Order)) {
+            self.expect_kind(
+                |kind| matches!(kind, TokenKind::By),
+                "expected BY after ORDER",
+            )?;
             self.parse_order_by()?
         } else {
             Vec::new()
         };
-        let limit = if self.matches(TokenMatcher::Limit) {
+        let limit = if self.matches_kind(|kind| matches!(kind, TokenKind::Limit)) {
             Some(self.parse_limit()?)
         } else {
             None
         };
 
-        self.matches(TokenMatcher::Semicolon);
+        self.matches_kind(|kind| matches!(kind, TokenKind::Semicolon));
 
         if !self.is_done() {
             return Err(self.error_here("unexpected trailing tokens"));
@@ -122,13 +125,13 @@ impl Parser {
         let mut items = Vec::new();
 
         loop {
-            if self.matches(TokenMatcher::Star) {
+            if self.matches_kind(|kind| matches!(kind, TokenKind::Star)) {
                 items.push(SelectItem::Wildcard);
             } else {
                 items.push(SelectItem::Column(self.parse_identifier_path()?));
             }
 
-            if !self.matches(TokenMatcher::Comma) {
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
         }
@@ -145,15 +148,14 @@ impl Parser {
     fn parse_joins(&mut self) -> Result<Vec<Join>, ParseError> {
         let mut joins = Vec::new();
 
-        while self.matches(TokenMatcher::Join) {
+        while self.matches_kind(|kind| matches!(kind, TokenKind::Join)) {
             let table = self.parse_table_ref()?;
-            self.expect_keyword(TokenMatcher::On, "expected ON after JOIN table")?;
+            self.expect_kind(
+                |kind| matches!(kind, TokenKind::On),
+                "expected ON after JOIN table",
+            )?;
             let on = self.parse_expression()?;
-            joins.push(Join {
-                kind: JoinKind::Inner,
-                table,
-                on,
-            });
+            joins.push(Join { table, on });
         }
 
         Ok(joins)
@@ -164,15 +166,15 @@ impl Parser {
 
         loop {
             let column = self.parse_identifier_path()?;
-            let direction = if self.matches(TokenMatcher::Desc) {
+            let direction = if self.matches_kind(|kind| matches!(kind, TokenKind::Desc)) {
                 OrderDirection::Desc
             } else {
-                self.matches(TokenMatcher::Asc);
+                self.matches_kind(|kind| matches!(kind, TokenKind::Asc));
                 OrderDirection::Asc
             };
 
             clauses.push(OrderBy { column, direction });
-            if !self.matches(TokenMatcher::Comma) {
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
         }
@@ -191,141 +193,124 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expr, ParseError> {
-        self.parse_or()
+        self.parse_expression_bp(0)
     }
 
-    fn parse_or(&mut self) -> Result<Expr, ParseError> {
-        let mut expr = self.parse_and()?;
+    fn parse_expression_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
+        let mut left = self.nud()?;
 
-        while self.matches(TokenMatcher::Or) {
-            expr = Expr::Binary {
-                left: Box::new(expr),
-                operator: BinaryOperator::Or,
-                right: Box::new(self.parse_and()?),
+        loop {
+            let Some(op) = self.peek_infix_op() else {
+                break;
             };
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_and(&mut self) -> Result<Expr, ParseError> {
-        let mut expr = self.parse_not()?;
-
-        while self.matches(TokenMatcher::And) {
-            expr = Expr::Binary {
-                left: Box::new(expr),
-                operator: BinaryOperator::And,
-                right: Box::new(self.parse_not()?),
-            };
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_not(&mut self) -> Result<Expr, ParseError> {
-        if self.matches(TokenMatcher::Not) {
-            return Ok(Expr::Unary {
-                operator: UnaryOperator::Not,
-                expr: Box::new(self.parse_not()?),
-            });
-        }
-
-        self.parse_comparison()
-    }
-
-    fn parse_comparison(&mut self) -> Result<Expr, ParseError> {
-        let left = self.parse_primary()?;
-
-        if self.matches(TokenMatcher::Not) {
-            if self.matches(TokenMatcher::In) {
-                return self.parse_in_list(left, true);
+            let (left_bp, right_bp) = op.binding_power();
+            if left_bp < min_bp {
+                break;
             }
-            return Err(self.error_here("expected IN after NOT"));
+
+            self.advance();
+            left = self.led(left, op, right_bp)?;
         }
 
-        if self.matches(TokenMatcher::In) {
-            return self.parse_in_list(left, false);
-        }
+        Ok(left)
+    }
 
-        if self.matches(TokenMatcher::Like) {
-            return Ok(Expr::Binary {
-                left: Box::new(left),
-                operator: BinaryOperator::Like,
-                right: Box::new(self.parse_primary()?),
-            });
-        }
+    fn nud(&mut self) -> Result<Expr, ParseError> {
+        let token = self
+            .advance()
+            .cloned()
+            .ok_or_else(|| self.error_here("expected expression"))?;
 
-        let operator = if self.matches(TokenMatcher::Eq) {
-            Some(BinaryOperator::Eq)
-        } else if self.matches(TokenMatcher::NotEq) {
-            Some(BinaryOperator::NotEq)
-        } else if self.matches(TokenMatcher::Gte) {
-            Some(BinaryOperator::Gte)
-        } else if self.matches(TokenMatcher::Lte) {
-            Some(BinaryOperator::Lte)
-        } else if self.matches(TokenMatcher::Gt) {
-            Some(BinaryOperator::Gt)
-        } else if self.matches(TokenMatcher::Lt) {
-            Some(BinaryOperator::Lt)
-        } else {
-            None
-        };
-
-        match operator {
-            Some(operator) => Ok(Expr::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(self.parse_primary()?),
+        match token.kind {
+            TokenKind::LParen => {
+                let expr = self.parse_expression_bp(0)?;
+                self.expect_kind(|kind| matches!(kind, TokenKind::RParen), "expected )")?;
+                Ok(expr)
+            }
+            TokenKind::Not => Ok(Expr::Unary {
+                operator: UnaryOperator::Not,
+                expr: Box::new(self.parse_expression_bp(PREFIX_NOT_BP)?),
             }),
-            None => Ok(left),
+            TokenKind::Identifier(mut value) => {
+                while self.matches_kind(|kind| matches!(kind, TokenKind::Dot)) {
+                    value.push('.');
+                    match self.advance() {
+                        Some(Token {
+                            kind: TokenKind::Identifier(next),
+                            ..
+                        }) => value.push_str(next),
+                        _ => return Err(self.error_here("expected identifier after .")),
+                    }
+                }
+
+                Ok(Expr::Identifier(value))
+            }
+            TokenKind::Integer(value) => Ok(Expr::Literal(Literal::Integer(value))),
+            TokenKind::String(value) => Ok(Expr::Literal(Literal::String(value))),
+            _ => Err(self.error_here("expected identifier or literal")),
         }
     }
 
-    fn parse_in_list(&mut self, left: Expr, negated: bool) -> Result<Expr, ParseError> {
-        self.expect_keyword(TokenMatcher::LParen, "expected ( after IN")?;
+    fn led(&mut self, left: Expr, op: InfixOp, right_bp: u8) -> Result<Expr, ParseError> {
+        match op {
+            InfixOp::Or => self.led_binary(left, BinaryOperator::Or, right_bp),
+            InfixOp::And => self.led_binary(left, BinaryOperator::And, right_bp),
+            InfixOp::Eq => self.led_binary(left, BinaryOperator::Eq, right_bp),
+            InfixOp::NotEq => self.led_binary(left, BinaryOperator::NotEq, right_bp),
+            InfixOp::Gt => self.led_binary(left, BinaryOperator::Gt, right_bp),
+            InfixOp::Lt => self.led_binary(left, BinaryOperator::Lt, right_bp),
+            InfixOp::Gte => self.led_binary(left, BinaryOperator::Gte, right_bp),
+            InfixOp::Lte => self.led_binary(left, BinaryOperator::Lte, right_bp),
+            InfixOp::Like => self.led_binary(left, BinaryOperator::Like, right_bp),
+            InfixOp::In => self.led_in_list(left, false),
+            InfixOp::NotIn => {
+                self.expect_kind(
+                    |kind| matches!(kind, TokenKind::In),
+                    "expected IN after NOT",
+                )?;
+                self.led_in_list(left, true)
+            }
+        }
+    }
+
+    fn led_binary(
+        &mut self,
+        left: Expr,
+        operator: BinaryOperator,
+        right_bp: u8,
+    ) -> Result<Expr, ParseError> {
+        let right = self.parse_expression_bp(right_bp)?;
+        Ok(Expr::Binary {
+            left: Box::new(left),
+            operator,
+            right: Box::new(right),
+        })
+    }
+
+    fn led_in_list(&mut self, left: Expr, negated: bool) -> Result<Expr, ParseError> {
+        self.expect_kind(
+            |kind| matches!(kind, TokenKind::LParen),
+            "expected ( after IN",
+        )?;
         let mut values = Vec::new();
 
         loop {
-            values.push(self.parse_primary()?);
-            if !self.matches(TokenMatcher::Comma) {
+            values.push(self.parse_expression_bp(0)?);
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
         }
 
-        self.expect_keyword(TokenMatcher::RParen, "expected ) after IN list")?;
+        self.expect_kind(
+            |kind| matches!(kind, TokenKind::RParen),
+            "expected ) after IN list",
+        )?;
 
         Ok(Expr::InList {
             expr: Box::new(left),
             values,
             negated,
         })
-    }
-
-    fn parse_primary(&mut self) -> Result<Expr, ParseError> {
-        if self.matches(TokenMatcher::LParen) {
-            let expr = self.parse_expression()?;
-            self.expect_keyword(TokenMatcher::RParen, "expected )")?;
-            return Ok(expr);
-        }
-
-        match self.advance() {
-            Some(Token {
-                kind: TokenKind::Identifier(_),
-                ..
-            }) => {
-                self.index -= 1;
-                Ok(Expr::Identifier(self.parse_identifier_path()?))
-            }
-            Some(Token {
-                kind: TokenKind::Integer(value),
-                ..
-            }) => Ok(Expr::Literal(Literal::Integer(*value))),
-            Some(Token {
-                kind: TokenKind::String(value),
-                ..
-            }) => Ok(Expr::Literal(Literal::String(value.clone()))),
-            _ => Err(self.error_here("expected identifier or literal")),
-        }
     }
 
     fn parse_identifier_path(&mut self) -> Result<String, ParseError> {
@@ -337,7 +322,7 @@ impl Parser {
             _ => return Err(self.error_here("expected identifier")),
         };
 
-        while self.matches(TokenMatcher::Dot) {
+        while self.matches_kind(|kind| matches!(kind, TokenKind::Dot)) {
             value.push('.');
             match self.advance() {
                 Some(Token {
@@ -351,24 +336,56 @@ impl Parser {
         Ok(value)
     }
 
-    fn expect_keyword(
-        &mut self,
-        matcher: TokenMatcher,
-        message: &'static str,
-    ) -> Result<(), ParseError> {
-        if self.matches(matcher) {
+    fn expect_kind<F>(&mut self, predicate: F, message: &'static str) -> Result<(), ParseError>
+    where
+        F: FnOnce(&TokenKind) -> bool,
+    {
+        if self.matches_kind(predicate) {
             Ok(())
         } else {
             Err(self.error_here(message))
         }
     }
 
-    fn matches(&mut self, matcher: TokenMatcher) -> bool {
-        if matcher.matches(self.peek()) {
+    fn matches_kind<F>(&mut self, predicate: F) -> bool
+    where
+        F: FnOnce(&TokenKind) -> bool,
+    {
+        if self.peek().is_some_and(|token| predicate(&token.kind)) {
             self.index += 1;
             true
         } else {
             false
+        }
+    }
+
+    fn peek_next_matches_kind<F>(&self, predicate: F) -> bool
+    where
+        F: FnOnce(&TokenKind) -> bool,
+    {
+        self.tokens
+            .get(self.index + 1)
+            .is_some_and(|token| predicate(&token.kind))
+    }
+
+    fn peek_infix_op(&self) -> Option<InfixOp> {
+        match self.peek().map(|token| &token.kind) {
+            Some(TokenKind::Or) => Some(InfixOp::Or),
+            Some(TokenKind::And) => Some(InfixOp::And),
+            Some(TokenKind::Eq) => Some(InfixOp::Eq),
+            Some(TokenKind::NotEq) => Some(InfixOp::NotEq),
+            Some(TokenKind::Gt) => Some(InfixOp::Gt),
+            Some(TokenKind::Lt) => Some(InfixOp::Lt),
+            Some(TokenKind::Gte) => Some(InfixOp::Gte),
+            Some(TokenKind::Lte) => Some(InfixOp::Lte),
+            Some(TokenKind::Like) => Some(InfixOp::Like),
+            Some(TokenKind::In) => Some(InfixOp::In),
+            Some(TokenKind::Not)
+                if self.peek_next_matches_kind(|kind| matches!(kind, TokenKind::In)) =>
+            {
+                Some(InfixOp::NotIn)
+            }
+            _ => None,
         }
     }
 
@@ -394,80 +411,48 @@ impl Parser {
     }
 }
 
+const PREFIX_NOT_BP: u8 = 29;
+// One step below comparison operators, so `NOT active = true` parses as
+// `NOT (active = true)` while `NOT active AND ...` still stops before `AND`.
+
 #[derive(Clone, Copy)]
-enum TokenMatcher {
-    Select,
-    From,
-    Join,
-    On,
-    Where,
-    Order,
-    By,
-    Limit,
-    Asc,
-    Desc,
-    And,
+enum InfixOp {
     Or,
-    Not,
-    In,
-    Like,
-    Comma,
-    Dot,
-    LParen,
-    RParen,
-    Semicolon,
-    Star,
+    And,
     Eq,
     NotEq,
     Gt,
     Lt,
     Gte,
     Lte,
+    Like,
+    In,
+    NotIn,
 }
 
-impl TokenMatcher {
-    fn matches(self, token: Option<&Token>) -> bool {
-        let Some(kind) = token.map(|token| &token.kind) else {
-            return false;
-        };
-        matches!(
-            (self, kind),
-            (Self::Select, TokenKind::Select)
-                | (Self::From, TokenKind::From)
-                | (Self::Join, TokenKind::Join)
-                | (Self::On, TokenKind::On)
-                | (Self::Where, TokenKind::Where)
-                | (Self::Order, TokenKind::Order)
-                | (Self::By, TokenKind::By)
-                | (Self::Limit, TokenKind::Limit)
-                | (Self::Asc, TokenKind::Asc)
-                | (Self::Desc, TokenKind::Desc)
-                | (Self::And, TokenKind::And)
-                | (Self::Or, TokenKind::Or)
-                | (Self::Not, TokenKind::Not)
-                | (Self::In, TokenKind::In)
-                | (Self::Like, TokenKind::Like)
-                | (Self::Comma, TokenKind::Comma)
-                | (Self::Dot, TokenKind::Dot)
-                | (Self::LParen, TokenKind::LParen)
-                | (Self::RParen, TokenKind::RParen)
-                | (Self::Semicolon, TokenKind::Semicolon)
-                | (Self::Star, TokenKind::Star)
-                | (Self::Eq, TokenKind::Eq)
-                | (Self::NotEq, TokenKind::NotEq)
-                | (Self::Gt, TokenKind::Gt)
-                | (Self::Lt, TokenKind::Lt)
-                | (Self::Gte, TokenKind::Gte)
-                | (Self::Lte, TokenKind::Lte)
-        )
+impl InfixOp {
+    fn binding_power(self) -> (u8, u8) {
+        match self {
+            Self::Or => (10, 11),
+            Self::And => (20, 21),
+            Self::Eq
+            | Self::NotEq
+            | Self::Gt
+            | Self::Lt
+            | Self::Gte
+            | Self::Lte
+            | Self::Like
+            | Self::In
+            | Self::NotIn => (30, 31),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::ast::{
-        BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
-        SelectStatement, TableRef, UnaryOperator,
+        BinaryOperator, Expr, Join, Literal, OrderBy, OrderDirection, SelectItem, SelectStatement,
+        TableRef, UnaryOperator,
     };
     use super::parse_query;
 
@@ -572,6 +557,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_not_with_and_precedence() {
+        let query = parse_query("SELECT name FROM functions WHERE NOT has_test = 1 AND line < 20")
+            .expect("query should parse");
+
+        assert_eq!(
+            query.where_clause,
+            Some(Expr::Binary {
+                left: Box::new(Expr::Unary {
+                    operator: UnaryOperator::Not,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Identifier("has_test".to_string())),
+                        operator: BinaryOperator::Eq,
+                        right: Box::new(Expr::Literal(Literal::Integer(1))),
+                    }),
+                }),
+                operator: BinaryOperator::And,
+                right: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Identifier("line".to_string())),
+                    operator: BinaryOperator::Lt,
+                    right: Box::new(Expr::Literal(Literal::Integer(20))),
+                }),
+            })
+        );
+    }
+
+    #[test]
     fn parses_in_list() {
         let query =
             parse_query("SELECT name FROM functions WHERE visibility IN ('public', 'private')")
@@ -662,7 +673,6 @@ mod tests {
         assert_eq!(
             query.joins,
             vec![Join {
-                kind: JoinKind::Inner,
                 table: TableRef {
                     name: "calls".to_string(),
                 },

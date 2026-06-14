@@ -21,14 +21,8 @@ pub struct TableRef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Join {
-    pub kind: JoinKind,
     pub table: TableRef,
     pub on: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JoinKind {
-    Inner,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

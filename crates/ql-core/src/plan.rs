@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::sql::{
-    BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
-    SelectStatement, UnaryOperator,
+    BinaryOperator, Expr, Join, Literal, OrderBy, OrderDirection, SelectItem, SelectStatement,
+    UnaryOperator,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,12 +70,8 @@ fn render_select_list(items: &[SelectItem]) -> Result<String, PlanError> {
 }
 
 fn render_join(join: &Join) -> Result<String, PlanError> {
-    let kind = match join.kind {
-        JoinKind::Inner => "JOIN",
-    };
-
     Ok(format!(
-        "{kind} {} ON {}",
+        "JOIN {} ON {}",
         render_identifier(&join.table.name)?,
         render_expr(&join.on)?,
     ))
