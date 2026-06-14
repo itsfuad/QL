@@ -397,6 +397,14 @@ impl Parser {
                 )?;
                 self.led_in_list(left, true)
             }
+            InfixOp::Between => self.led_between(left, false),
+            InfixOp::NotBetween => {
+                self.expect_kind(
+                    |kind| matches!(kind, TokenKind::Between),
+                    "expected BETWEEN after NOT",
+                )?;
+                self.led_between(left, true)
+            }
             InfixOp::Is => {
                 let negated = self.matches_kind(|kind| matches!(kind, TokenKind::Not));
                 self.expect_kind(
@@ -447,6 +455,22 @@ impl Parser {
         Ok(Expr::InList {
             expr: Box::new(left),
             values,
+            negated,
+        })
+    }
+
+    fn led_between(&mut self, left: Expr, negated: bool) -> Result<Expr, ParseError> {
+        let low = self.parse_expression_bp(31)?;
+        self.expect_kind(
+            |kind| matches!(kind, TokenKind::And),
+            "expected AND in BETWEEN expression",
+        )?;
+        let high = self.parse_expression_bp(31)?;
+
+        Ok(Expr::Between {
+            expr: Box::new(left),
+            low: Box::new(low),
+            high: Box::new(high),
             negated,
         })
     }
@@ -530,11 +554,17 @@ impl Parser {
             Some(TokenKind::Lte) => Some(InfixOp::Lte),
             Some(TokenKind::Like) => Some(InfixOp::Like),
             Some(TokenKind::In) => Some(InfixOp::In),
+            Some(TokenKind::Between) => Some(InfixOp::Between),
             Some(TokenKind::Is) => Some(InfixOp::Is),
             Some(TokenKind::Not)
                 if self.peek_next_matches_kind(|kind| matches!(kind, TokenKind::In)) =>
             {
                 Some(InfixOp::NotIn)
+            }
+            Some(TokenKind::Not)
+                if self.peek_next_matches_kind(|kind| matches!(kind, TokenKind::Between)) =>
+            {
+                Some(InfixOp::NotBetween)
             }
             _ => None,
         }
@@ -579,6 +609,8 @@ enum InfixOp {
     Like,
     In,
     NotIn,
+    Between,
+    NotBetween,
     Is,
 }
 
@@ -596,6 +628,8 @@ impl InfixOp {
             | Self::Like
             | Self::In
             | Self::NotIn
+            | Self::Between
+            | Self::NotBetween
             | Self::Is => (30, 31),
         }
     }
@@ -980,6 +1014,33 @@ mod tests {
                         operator: BinaryOperator::Eq,
                         right: Box::new(Expr::Literal(Literal::Boolean(true))),
                     }),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_between_predicates() {
+        let query = parse_query(
+            "SELECT name FROM functions WHERE complexity BETWEEN 3 AND 5 OR line NOT BETWEEN 10 AND 20",
+        )
+        .expect("query should parse");
+
+        assert_eq!(
+            query.where_clause,
+            Some(Expr::Binary {
+                left: Box::new(Expr::Between {
+                    expr: Box::new(Expr::Identifier("complexity".to_string())),
+                    low: Box::new(Expr::Literal(Literal::Integer(3))),
+                    high: Box::new(Expr::Literal(Literal::Integer(5))),
+                    negated: false,
+                }),
+                operator: BinaryOperator::Or,
+                right: Box::new(Expr::Between {
+                    expr: Box::new(Expr::Identifier("line".to_string())),
+                    low: Box::new(Expr::Literal(Literal::Integer(10))),
+                    high: Box::new(Expr::Literal(Literal::Integer(20))),
+                    negated: true,
                 }),
             })
         );

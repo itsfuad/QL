@@ -26,6 +26,7 @@ pub enum TokenKind {
     Or,
     Not,
     In,
+    Between,
     Null,
     True,
     False,
@@ -193,6 +194,7 @@ fn keyword_or_identifier(value: &str) -> TokenKind {
         "OR" => TokenKind::Or,
         "NOT" => TokenKind::Not,
         "IN" => TokenKind::In,
+        "BETWEEN" => TokenKind::Between,
         "LIKE" => TokenKind::Like,
         _ => TokenKind::Identifier(value.to_string()),
     }

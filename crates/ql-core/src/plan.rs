@@ -177,6 +177,28 @@ fn render_expr(expr: &Expr) -> Result<String, PlanError> {
                 rendered_values.join(", "),
             ))
         }
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+        } => {
+            if *negated {
+                Ok(format!(
+                    "({} NOT BETWEEN {} AND {})",
+                    render_expr(expr)?,
+                    render_expr(low)?,
+                    render_expr(high)?,
+                ))
+            } else {
+                Ok(format!(
+                    "({} BETWEEN {} AND {})",
+                    render_expr(expr)?,
+                    render_expr(low)?,
+                    render_expr(high)?,
+                ))
+            }
+        }
         Expr::IsNull { expr, negated } => {
             let negated = if *negated { " NOT" } else { "" };
             Ok(format!("({} IS{negated} NULL)", render_expr(expr)?))
@@ -303,6 +325,20 @@ mod tests {
         assert_eq!(
             plan.sql,
             "SELECT name FROM functions WHERE ((deleted IS NULL) OR ((has_test IS NOT NULL) AND (active = TRUE)))"
+        );
+    }
+
+    #[test]
+    fn renders_between() {
+        let statement = parse(
+            "SELECT name FROM functions WHERE complexity BETWEEN 3 AND 5 OR line NOT BETWEEN 10 AND 20",
+        );
+
+        let plan = plan_select(&statement).expect("query should plan");
+
+        assert_eq!(
+            plan.sql,
+            "SELECT name FROM functions WHERE ((complexity BETWEEN 3 AND 5) OR (line NOT BETWEEN 10 AND 20))"
         );
     }
 

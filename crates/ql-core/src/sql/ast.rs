@@ -59,6 +59,12 @@ pub enum Expr {
         values: Vec<Expr>,
         negated: bool,
     },
+    Between {
+        expr: Box<Expr>,
+        low: Box<Expr>,
+        high: Box<Expr>,
+        negated: bool,
+    },
     IsNull {
         expr: Box<Expr>,
         negated: bool,
