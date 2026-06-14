@@ -145,3 +145,6 @@ fn insert_batch(connection: &Connection, batch: &TableBatch) -> Result<(), duckd
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,16 +1,18 @@
-//! Regression tests for `storage::open_batch`'s DuckDB Appender-based ingestion.
-//!
-//! These confirm that switching row-by-row `INSERT` statements to the Appender API
-//! (for bulk-load performance) preserves exact query results: same row counts, same
-//! column values (including booleans, zeros, and empty strings), and same ordering
-//! behavior under `ORDER BY`/`LIMIT`.
-
 use ql_ast::{CallRow, CommentRow, FunctionRow, ImportRow, StructRow, TableBatch, VariableRow};
-use ql_core::execute::execute_query;
-use ql_core::sql::parse_query;
 use serde_json::Value;
 
-fn run(batch: &TableBatch, sql: &str) -> ql_core::QueryResult {
+use crate::QueryResult;
+use crate::execute::execute_query;
+use crate::sql::parse_query;
+
+// Regression tests for the DuckDB Appender-based ingestion in `insert_batch`.
+//
+// These confirm that switching row-by-row `INSERT` statements to the Appender
+// API (for bulk-load performance) preserves exact query results: same row
+// counts, same column values (including booleans, zeros, and empty strings),
+// and same ordering behavior under `ORDER BY`/`LIMIT`.
+
+fn run(batch: &TableBatch, sql: &str) -> QueryResult {
     let statement = parse_query(sql).expect("query should parse");
     execute_query(batch, &statement).expect("query should execute")
 }
