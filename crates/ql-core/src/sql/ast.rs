@@ -59,6 +59,10 @@ pub enum Expr {
         values: Vec<Expr>,
         negated: bool,
     },
+    IsNull {
+        expr: Box<Expr>,
+        negated: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,4 +87,6 @@ pub enum BinaryOperator {
 pub enum Literal {
     Integer(u64),
     String(String),
+    Boolean(bool),
+    Null,
 }

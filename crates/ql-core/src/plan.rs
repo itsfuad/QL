@@ -177,6 +177,10 @@ fn render_expr(expr: &Expr) -> Result<String, PlanError> {
                 rendered_values.join(", "),
             ))
         }
+        Expr::IsNull { expr, negated } => {
+            let negated = if *negated { " NOT" } else { "" };
+            Ok(format!("({} IS{negated} NULL)", render_expr(expr)?))
+        }
     }
 }
 
@@ -198,6 +202,8 @@ fn render_literal(literal: &Literal) -> String {
     match literal {
         Literal::Integer(value) => value.to_string(),
         Literal::String(value) => format!("'{}'", value.replace('\'', "''")),
+        Literal::Boolean(value) => value.to_string().to_uppercase(),
+        Literal::Null => "NULL".to_string(),
     }
 }
 
@@ -283,6 +289,20 @@ mod tests {
         assert_eq!(
             plan.sql,
             "SELECT DISTINCT file FROM functions GROUP BY file HAVING (complexity > 10)"
+        );
+    }
+
+    #[test]
+    fn renders_is_null_and_booleans() {
+        let statement = parse(
+            "SELECT name FROM functions WHERE deleted IS NULL OR has_test IS NOT NULL AND active = true",
+        );
+
+        let plan = plan_select(&statement).expect("query should plan");
+
+        assert_eq!(
+            plan.sql,
+            "SELECT name FROM functions WHERE ((deleted IS NULL) OR ((has_test IS NOT NULL) AND (active = TRUE)))"
         );
     }
 

@@ -371,6 +371,9 @@ impl Parser {
             }
             TokenKind::Integer(value) => Ok(Expr::Literal(Literal::Integer(value))),
             TokenKind::String(value) => Ok(Expr::Literal(Literal::String(value))),
+            TokenKind::Null => Ok(Expr::Literal(Literal::Null)),
+            TokenKind::True => Ok(Expr::Literal(Literal::Boolean(true))),
+            TokenKind::False => Ok(Expr::Literal(Literal::Boolean(false))),
             _ => Err(self.error_here("expected identifier or literal")),
         }
     }
@@ -393,6 +396,17 @@ impl Parser {
                     "expected IN after NOT",
                 )?;
                 self.led_in_list(left, true)
+            }
+            InfixOp::Is => {
+                let negated = self.matches_kind(|kind| matches!(kind, TokenKind::Not));
+                self.expect_kind(
+                    |kind| matches!(kind, TokenKind::Null),
+                    "expected NULL after IS",
+                )?;
+                Ok(Expr::IsNull {
+                    expr: Box::new(left),
+                    negated,
+                })
             }
         }
     }
@@ -516,6 +530,7 @@ impl Parser {
             Some(TokenKind::Lte) => Some(InfixOp::Lte),
             Some(TokenKind::Like) => Some(InfixOp::Like),
             Some(TokenKind::In) => Some(InfixOp::In),
+            Some(TokenKind::Is) => Some(InfixOp::Is),
             Some(TokenKind::Not)
                 if self.peek_next_matches_kind(|kind| matches!(kind, TokenKind::In)) =>
             {
@@ -564,6 +579,7 @@ enum InfixOp {
     Like,
     In,
     NotIn,
+    Is,
 }
 
 impl InfixOp {
@@ -579,7 +595,8 @@ impl InfixOp {
             | Self::Lte
             | Self::Like
             | Self::In
-            | Self::NotIn => (30, 31),
+            | Self::NotIn
+            | Self::Is => (30, 31),
         }
     }
 }
@@ -933,6 +950,37 @@ mod tests {
                 left: Box::new(Expr::Identifier("complexity".to_string())),
                 operator: BinaryOperator::Gt,
                 right: Box::new(Expr::Literal(Literal::Integer(10))),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_is_null_and_booleans() {
+        let query = parse_query(
+            "SELECT name FROM functions WHERE deleted IS NULL OR has_test IS NOT NULL AND active = true",
+        )
+        .expect("query should parse");
+
+        assert_eq!(
+            query.where_clause,
+            Some(Expr::Binary {
+                left: Box::new(Expr::IsNull {
+                    expr: Box::new(Expr::Identifier("deleted".to_string())),
+                    negated: false,
+                }),
+                operator: BinaryOperator::Or,
+                right: Box::new(Expr::Binary {
+                    left: Box::new(Expr::IsNull {
+                        expr: Box::new(Expr::Identifier("has_test".to_string())),
+                        negated: true,
+                    }),
+                    operator: BinaryOperator::And,
+                    right: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Identifier("active".to_string())),
+                        operator: BinaryOperator::Eq,
+                        right: Box::new(Expr::Literal(Literal::Boolean(true))),
+                    }),
+                }),
             })
         );
     }
