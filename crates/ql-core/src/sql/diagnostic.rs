@@ -87,11 +87,7 @@ impl Span {
 
         for current_line in start_line..=end_line {
             if let Some(text) = file.line_text(current_line) {
-                let _ = writeln!(
-                    rendered,
-                    "{current_line:>width$} | {text}",
-                    width = width
-                );
+                let _ = writeln!(rendered, "{current_line:>width$} | {text}", width = width);
             }
         }
 
@@ -144,20 +140,14 @@ impl Diagnostic {
 
         for label in &self.labels {
             let Some(file) = files.get(label.span.file_id) else {
-                let _ = writeln!(
-                    rendered,
-                    "  --> <unknown>:{}:{}",
-                    label.span.start + 1,
-                    1
-                );
+                let _ = writeln!(rendered, "  --> <unknown>:{}:{}", label.span.start + 1, 1);
                 continue;
             };
 
             let (line, column) = label.span.line_col(file);
             let line_text = file.line_text(line).unwrap_or("");
 
-            let underline_width =
-                label.span.end.saturating_sub(label.span.start).max(1);
+            let underline_width = label.span.end.saturating_sub(label.span.start).max(1);
 
             // One gutter width used everywhere.
             let gutter_width = line.to_string().len();
@@ -172,12 +162,7 @@ impl Diagnostic {
                 width = gutter_width,
             );
 
-            let _ = writeln!(
-                rendered,
-                "{:>width$} |",
-                "",
-                width = gutter_width,
-            );
+            let _ = writeln!(rendered, "{:>width$} |", "", width = gutter_width,);
 
             let _ = writeln!(
                 rendered,
@@ -199,12 +184,7 @@ impl Diagnostic {
                 marker.push_str(&label.message);
             }
 
-            let _ = writeln!(
-                rendered,
-                "{:>width$} | {marker}",
-                "",
-                width = gutter_width,
-            );
+            let _ = writeln!(rendered, "{:>width$} | {marker}", "", width = gutter_width,);
         }
 
         for note in &self.notes {
