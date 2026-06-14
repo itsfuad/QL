@@ -12,7 +12,7 @@ pub struct ParseError {
 }
 
 pub fn parse_query(input: &str) -> Result<SelectStatement, ParseError> {
-    let tokens = lex(input).map_err(|position| ParseError::invalid_token(position))?;
+    let tokens = lex(input).map_err(ParseError::invalid_token)?;
     Parser::new(tokens).parse_select()
 }
 
@@ -65,7 +65,7 @@ impl ParseError {
         let file = SourceFile::new(file_name, input);
         self.diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.render(&[file.clone()]))
+            .map(|diagnostic| diagnostic.render(std::slice::from_ref(&file)))
             .collect::<Vec<_>>()
             .join("\n\n")
     }
@@ -323,10 +323,7 @@ impl Parser {
     fn parse_expression_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
         let mut left = self.nud()?;
 
-        loop {
-            let Some(op) = self.peek_infix_op() else {
-                break;
-            };
+        while let Some(op) = self.peek_infix_op() {
             let (left_bp, right_bp) = op.binding_power();
             if left_bp < min_bp {
                 break;
