@@ -8,7 +8,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    pub diagnostic: Diagnostic,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 pub fn parse_query(input: &str) -> Result<SelectStatement, ParseError> {
@@ -22,38 +22,52 @@ impl ParseError {
     }
 
     fn new(code: &str, message: &str, span: Span) -> Self {
-        Self {
-            diagnostic: Diagnostic {
-                severity: Severity::Error,
-                code: Some(code.to_string()),
-                message: message.to_string(),
-                labels: vec![Label {
-                    span,
-                    message: String::new(),
-                }],
-                notes: Vec::new(),
-            },
-        }
+        Self::single(Diagnostic {
+            severity: Severity::Error,
+            code: Some(code.to_string()),
+            message: message.to_string(),
+            labels: vec![Label {
+                span,
+                message: String::new(),
+            }],
+            notes: Vec::new(),
+        })
     }
 
     fn at(message: &str, span: Span) -> Self {
         Self::new("E001", message, span)
     }
 
+    fn single(diagnostic: Diagnostic) -> Self {
+        Self {
+            diagnostics: vec![diagnostic],
+        }
+    }
+
+    fn from_diagnostics(diagnostics: Vec<Diagnostic>) -> Self {
+        Self { diagnostics }
+    }
+
     pub fn message(&self) -> &str {
-        &self.diagnostic.message
+        self.diagnostics
+            .first()
+            .map_or("parse error", |diagnostic| diagnostic.message.as_str())
     }
 
     pub fn position(&self) -> usize {
-        self.diagnostic
-            .labels
+        self.diagnostics
             .first()
+            .and_then(|diagnostic| diagnostic.labels.first())
             .map_or(0, |label| label.span.start)
     }
 
     pub fn render(&self, file_name: &str, input: &str) -> String {
         let file = SourceFile::new(file_name, input);
-        self.diagnostic.render(&[file])
+        self.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.render(&[file.clone()]))
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 }
 
@@ -67,6 +81,7 @@ struct Parser {
     tokens: Vec<Token>,
     index: usize,
     eof: usize,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Parser {
@@ -76,31 +91,45 @@ impl Parser {
             tokens,
             index: 0,
             eof,
+            diagnostics: Vec::new(),
         }
     }
 
     fn parse_select(&mut self) -> Result<SelectStatement, ParseError> {
-        self.expect_kind(|kind| matches!(kind, TokenKind::Select), "expected SELECT")?;
-        let select = self.parse_select_list()?;
-        self.expect_kind(|kind| matches!(kind, TokenKind::From), "expected FROM")?;
-        let from = self.parse_table_ref()?;
-        let joins = self.parse_joins()?;
+        if !self.matches_kind(|kind| matches!(kind, TokenKind::Select)) {
+            self.record_error(self.error_here("expected SELECT"));
+            self.recover_to_clause_boundary();
+        }
+        let select = self.parse_or_recover(Vec::new(), Parser::parse_select_list);
+        if !self.matches_kind(|kind| matches!(kind, TokenKind::From)) {
+            self.record_error(self.error_here("expected FROM"));
+            self.recover_to_clause_boundary();
+            self.matches_kind(|kind| matches!(kind, TokenKind::From));
+        }
+        let from = self.parse_or_recover(
+            TableRef {
+                name: String::new(),
+            },
+            Parser::parse_table_ref,
+        );
+        let joins = self.parse_joins();
         let where_clause = if self.matches_kind(|kind| matches!(kind, TokenKind::Where)) {
-            Some(self.parse_expression()?)
+            self.parse_or_recover(None, |parser| parser.parse_expression().map(Some))
         } else {
             None
         };
         let order_by = if self.matches_kind(|kind| matches!(kind, TokenKind::Order)) {
-            self.expect_kind(
-                |kind| matches!(kind, TokenKind::By),
-                "expected BY after ORDER",
-            )?;
-            self.parse_order_by()?
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::By)) {
+                self.record_error(self.error_here("expected BY after ORDER"));
+                self.recover_to_clause_boundary();
+                self.matches_kind(|kind| matches!(kind, TokenKind::By));
+            }
+            self.parse_or_recover(Vec::new(), Parser::parse_order_by)
         } else {
             Vec::new()
         };
         let limit = if self.matches_kind(|kind| matches!(kind, TokenKind::Limit)) {
-            Some(self.parse_limit()?)
+            self.parse_or_recover(None, |parser| parser.parse_limit().map(Some))
         } else {
             None
         };
@@ -108,17 +137,86 @@ impl Parser {
         self.matches_kind(|kind| matches!(kind, TokenKind::Semicolon));
 
         if !self.is_done() {
-            return Err(self.error_here("unexpected trailing tokens"));
+            self.record_error(self.error_here("unexpected trailing tokens"));
+            self.recover_to_clause_boundary();
         }
 
-        Ok(SelectStatement {
-            select,
-            from,
-            joins,
-            where_clause,
-            order_by,
-            limit,
-        })
+        if self.diagnostics.is_empty() {
+            Ok(SelectStatement {
+                select,
+                from,
+                joins,
+                where_clause,
+                order_by,
+                limit,
+            })
+        } else {
+            Err(ParseError::from_diagnostics(std::mem::take(
+                &mut self.diagnostics,
+            )))
+        }
+    }
+
+    fn parse_or_recover<T>(
+        &mut self,
+        fallback: T,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> T {
+        match parse(self) {
+            Ok(value) => value,
+            Err(error) => {
+                self.record_error(error);
+                self.recover_to_clause_boundary();
+                fallback
+            }
+        }
+    }
+
+    fn record_error(&mut self, error: ParseError) {
+        self.diagnostics.extend(error.diagnostics);
+    }
+
+    fn recover_to_clause_boundary(&mut self) {
+        while let Some(token) = self.peek() {
+            if matches!(
+                token.kind,
+                TokenKind::From
+                    | TokenKind::Join
+                    | TokenKind::Where
+                    | TokenKind::Order
+                    | TokenKind::Limit
+                    | TokenKind::Semicolon
+            ) {
+                break;
+            }
+            self.index += 1;
+        }
+    }
+
+    fn parse_joins(&mut self) -> Vec<Join> {
+        let mut joins = Vec::new();
+
+        while self.matches_kind(|kind| matches!(kind, TokenKind::Join)) {
+            match self.parse_join() {
+                Ok(join) => joins.push(join),
+                Err(error) => {
+                    self.record_error(error);
+                    self.recover_to_clause_boundary();
+                }
+            }
+        }
+
+        joins
+    }
+
+    fn parse_join(&mut self) -> Result<Join, ParseError> {
+        let table = self.parse_table_ref()?;
+        self.expect_kind(
+            |kind| matches!(kind, TokenKind::On),
+            "expected ON after JOIN table",
+        )?;
+        let on = self.parse_expression()?;
+        Ok(Join { table, on })
     }
 
     fn parse_select_list(&mut self) -> Result<Vec<SelectItem>, ParseError> {
@@ -143,22 +241,6 @@ impl Parser {
         Ok(TableRef {
             name: self.parse_identifier_path()?,
         })
-    }
-
-    fn parse_joins(&mut self) -> Result<Vec<Join>, ParseError> {
-        let mut joins = Vec::new();
-
-        while self.matches_kind(|kind| matches!(kind, TokenKind::Join)) {
-            let table = self.parse_table_ref()?;
-            self.expect_kind(
-                |kind| matches!(kind, TokenKind::On),
-                "expected ON after JOIN table",
-            )?;
-            let on = self.parse_expression()?;
-            joins.push(Join { table, on });
-        }
-
-        Ok(joins)
     }
 
     fn parse_order_by(&mut self) -> Result<Vec<OrderBy>, ParseError> {
@@ -700,5 +782,15 @@ mod tests {
 
         assert_eq!(error.message(), "invalid token");
         assert_eq!(error.position(), 33);
+    }
+
+    #[test]
+    fn recovers_and_reports_multiple_errors() {
+        let error = parse_query("SELECT name file FROM functions WHERE complexity >")
+            .expect_err("query should fail");
+
+        assert_eq!(error.diagnostics.len(), 2);
+        assert_eq!(error.diagnostics[0].message, "expected FROM");
+        assert_eq!(error.diagnostics[1].message, "expected expression");
     }
 }
