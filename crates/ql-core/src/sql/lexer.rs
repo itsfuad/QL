@@ -8,6 +8,7 @@ pub struct Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     Select,
+    Distinct,
     From,
     Join,
     On,
@@ -17,6 +18,7 @@ pub enum TokenKind {
     Limit,
     Asc,
     Desc,
+    As,
     And,
     Or,
     Not,
@@ -164,6 +166,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>, usize> {
 fn keyword_or_identifier(value: &str) -> TokenKind {
     match value.to_ascii_uppercase().as_str() {
         "SELECT" => TokenKind::Select,
+        "DISTINCT" => TokenKind::Distinct,
         "FROM" => TokenKind::From,
         "JOIN" => TokenKind::Join,
         "ON" => TokenKind::On,
@@ -173,6 +176,7 @@ fn keyword_or_identifier(value: &str) -> TokenKind {
         "LIMIT" => TokenKind::Limit,
         "ASC" => TokenKind::Asc,
         "DESC" => TokenKind::Desc,
+        "AS" => TokenKind::As,
         "AND" => TokenKind::And,
         "OR" => TokenKind::Or,
         "NOT" => TokenKind::Not,

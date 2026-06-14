@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectStatement {
     pub select: Vec<SelectItem>,
+    pub distinct: bool,
     pub from: TableRef,
     pub joins: Vec<Join>,
     pub where_clause: Option<Expr>,
@@ -11,12 +12,13 @@ pub struct SelectStatement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectItem {
     Wildcard,
-    Column(String),
+    Column { name: String, alias: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRef {
     pub name: String,
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

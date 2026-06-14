@@ -100,6 +100,7 @@ impl Parser {
             self.record_error(self.error_here("expected SELECT"));
             self.recover_to_clause_boundary();
         }
+        let distinct = self.matches_kind(|kind| matches!(kind, TokenKind::Distinct));
         let select = self.parse_or_recover(Vec::new(), Parser::parse_select_list);
         if !self.matches_kind(|kind| matches!(kind, TokenKind::From)) {
             self.record_error(self.error_here("expected FROM"));
@@ -109,6 +110,7 @@ impl Parser {
         let from = self.parse_or_recover(
             TableRef {
                 name: String::new(),
+                alias: None,
             },
             Parser::parse_table_ref,
         );
@@ -144,6 +146,7 @@ impl Parser {
         if self.diagnostics.is_empty() {
             Ok(SelectStatement {
                 select,
+                distinct,
                 from,
                 joins,
                 where_clause,
@@ -223,11 +226,7 @@ impl Parser {
         let mut items = Vec::new();
 
         loop {
-            if self.matches_kind(|kind| matches!(kind, TokenKind::Star)) {
-                items.push(SelectItem::Wildcard);
-            } else {
-                items.push(SelectItem::Column(self.parse_identifier_path()?));
-            }
+            items.push(self.parse_select_item()?);
 
             if !self.matches_kind(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
@@ -237,9 +236,20 @@ impl Parser {
         Ok(items)
     }
 
+    fn parse_select_item(&mut self) -> Result<SelectItem, ParseError> {
+        if self.matches_kind(|kind| matches!(kind, TokenKind::Star)) {
+            return Ok(SelectItem::Wildcard);
+        }
+
+        let name = self.parse_identifier_path()?;
+        let alias = self.parse_alias()?;
+        Ok(SelectItem::Column { name, alias })
+    }
+
     fn parse_table_ref(&mut self) -> Result<TableRef, ParseError> {
         Ok(TableRef {
             name: self.parse_identifier_path()?,
+            alias: self.parse_alias()?,
         })
     }
 
@@ -396,13 +406,7 @@ impl Parser {
     }
 
     fn parse_identifier_path(&mut self) -> Result<String, ParseError> {
-        let mut value = match self.advance() {
-            Some(Token {
-                kind: TokenKind::Identifier(value),
-                ..
-            }) => value.clone(),
-            _ => return Err(self.error_here("expected identifier")),
-        };
+        let mut value = self.parse_identifier()?;
 
         while self.matches_kind(|kind| matches!(kind, TokenKind::Dot)) {
             value.push('.');
@@ -416,6 +420,24 @@ impl Parser {
         }
 
         Ok(value)
+    }
+
+    fn parse_alias(&mut self) -> Result<Option<String>, ParseError> {
+        if !self.matches_kind(|kind| matches!(kind, TokenKind::As)) {
+            return Ok(None);
+        }
+
+        Ok(Some(self.parse_identifier()?))
+    }
+
+    fn parse_identifier(&mut self) -> Result<String, ParseError> {
+        match self.advance() {
+            Some(Token {
+                kind: TokenKind::Identifier(value),
+                ..
+            }) => Ok(value.clone()),
+            _ => Err(self.error_here("expected identifier")),
+        }
     }
 
     fn expect_kind<F>(&mut self, predicate: F, message: &'static str) -> Result<(), ParseError>
@@ -546,8 +568,10 @@ mod tests {
             query,
             SelectStatement {
                 select: vec![SelectItem::Wildcard],
+                distinct: false,
                 from: TableRef {
                     name: "functions".to_string(),
+                    alias: None,
                 },
                 joins: vec![],
                 where_clause: None,
@@ -565,9 +589,18 @@ mod tests {
         assert_eq!(
             query.select,
             vec![
-                SelectItem::Column("name".to_string()),
-                SelectItem::Column("file".to_string()),
-                SelectItem::Column("line".to_string()),
+                SelectItem::Column {
+                    name: "name".to_string(),
+                    alias: None,
+                },
+                SelectItem::Column {
+                    name: "file".to_string(),
+                    alias: None,
+                },
+                SelectItem::Column {
+                    name: "line".to_string(),
+                    alias: None,
+                },
             ]
         );
     }
@@ -742,7 +775,13 @@ mod tests {
     fn parses_trailing_semicolon() {
         let query = parse_query("SELECT name FROM functions;").expect("query should parse");
 
-        assert_eq!(query.select, vec![SelectItem::Column("name".to_string())]);
+        assert_eq!(
+            query.select,
+            vec![SelectItem::Column {
+                name: "name".to_string(),
+                alias: None,
+            }]
+        );
     }
 
     #[test]
@@ -757,11 +796,41 @@ mod tests {
             vec![Join {
                 table: TableRef {
                     name: "calls".to_string(),
+                    alias: None,
                 },
                 on: Expr::Binary {
                     left: Box::new(Expr::Identifier("functions.name".to_string())),
                     operator: BinaryOperator::Eq,
                     right: Box::new(Expr::Identifier("calls.caller".to_string())),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_join_aliases() {
+        let query =
+            parse_query("SELECT f.name FROM functions AS f JOIN calls AS c ON f.name = c.caller")
+                .expect("query should parse");
+
+        assert_eq!(
+            query.from,
+            TableRef {
+                name: "functions".to_string(),
+                alias: Some("f".to_string()),
+            }
+        );
+        assert_eq!(
+            query.joins,
+            vec![Join {
+                table: TableRef {
+                    name: "calls".to_string(),
+                    alias: Some("c".to_string()),
+                },
+                on: Expr::Binary {
+                    left: Box::new(Expr::Identifier("f.name".to_string())),
+                    operator: BinaryOperator::Eq,
+                    right: Box::new(Expr::Identifier("c.caller".to_string())),
                 },
             }]
         );
@@ -792,5 +861,27 @@ mod tests {
         assert_eq!(error.diagnostics.len(), 2);
         assert_eq!(error.diagnostics[0].message, "expected FROM");
         assert_eq!(error.diagnostics[1].message, "expected expression");
+    }
+
+    #[test]
+    fn parses_distinct_aliases() {
+        let query = parse_query("SELECT DISTINCT name AS n FROM functions AS f")
+            .expect("query should parse");
+
+        assert!(query.distinct);
+        assert_eq!(
+            query.select,
+            vec![SelectItem::Column {
+                name: "name".to_string(),
+                alias: Some("n".to_string()),
+            }]
+        );
+        assert_eq!(
+            query.from,
+            TableRef {
+                name: "functions".to_string(),
+                alias: Some("f".to_string()),
+            }
+        );
     }
 }

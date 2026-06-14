@@ -29,9 +29,12 @@ pub fn plan_select(statement: &SelectStatement) -> Result<PlannedQuery, PlanErro
 
 fn render_select(statement: &SelectStatement) -> Result<String, PlanError> {
     let mut sql = String::from("SELECT ");
+    if statement.distinct {
+        sql.push_str("DISTINCT ");
+    }
     sql.push_str(&render_select_list(&statement.select)?);
     sql.push_str(" FROM ");
-    sql.push_str(&render_identifier(&statement.from.name)?);
+    sql.push_str(&render_table_ref(&statement.from)?);
 
     for join in &statement.joins {
         sql.push(' ');
@@ -62,7 +65,14 @@ fn render_select_list(items: &[SelectItem]) -> Result<String, PlanError> {
     for item in items {
         rendered.push(match item {
             SelectItem::Wildcard => "*".to_string(),
-            SelectItem::Column(column) => render_identifier(column)?,
+            SelectItem::Column { name, alias } => {
+                let mut rendered = render_identifier(name)?;
+                if let Some(alias) = alias {
+                    rendered.push_str(" AS ");
+                    rendered.push_str(&render_identifier(alias)?);
+                }
+                rendered
+            }
         });
     }
 
@@ -72,9 +82,18 @@ fn render_select_list(items: &[SelectItem]) -> Result<String, PlanError> {
 fn render_join(join: &Join) -> Result<String, PlanError> {
     Ok(format!(
         "JOIN {} ON {}",
-        render_identifier(&join.table.name)?,
+        render_table_ref(&join.table)?,
         render_expr(&join.on)?,
     ))
+}
+
+fn render_table_ref(table: &crate::sql::TableRef) -> Result<String, PlanError> {
+    let mut rendered = render_identifier(&table.name)?;
+    if let Some(alias) = &table.alias {
+        rendered.push_str(" AS ");
+        rendered.push_str(&render_identifier(alias)?);
+    }
+    Ok(rendered)
 }
 
 fn render_order_by(clauses: &[OrderBy]) -> Result<String, PlanError> {
@@ -221,11 +240,30 @@ mod tests {
     }
 
     #[test]
+    fn renders_distinct_aliases() {
+        let statement = parse(
+            "SELECT DISTINCT f.name AS func_name FROM functions AS f JOIN calls AS c ON f.name = c.caller",
+        );
+
+        let plan = plan_select(&statement).expect("query should plan");
+
+        assert_eq!(
+            plan.sql,
+            "SELECT DISTINCT f.name AS func_name FROM functions AS f JOIN calls AS c ON (f.name = c.caller)"
+        );
+    }
+
+    #[test]
     fn rejects_invalid_identifier() {
         let statement = SelectStatement {
-            select: vec![crate::sql::SelectItem::Column("bad-name".to_string())],
+            select: vec![crate::sql::SelectItem::Column {
+                name: "bad-name".to_string(),
+                alias: None,
+            }],
+            distinct: false,
             from: crate::sql::TableRef {
                 name: "functions".to_string(),
+                alias: None,
             },
             joins: Vec::new(),
             where_clause: None,
