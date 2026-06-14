@@ -63,97 +63,85 @@ fn create_schema(connection: &Connection) -> Result<(), duckdb::Error> {
 }
 
 fn insert_batch(connection: &Connection, batch: &TableBatch) -> Result<(), duckdb::Error> {
-    // We insert table-by-table so ingestion logic mirrors shared schema directly and
-    // stays easy to extend when new adapters start filling more tables.
-    let mut functions = connection.prepare(
-        "INSERT INTO functions
-         (file, line, name, visibility, param_count, return_type, complexity, has_test)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )?;
+    // We insert table-by-table, using DuckDB's Appender API for bulk loading. Appenders
+    // buffer rows columnar-side and avoid the per-row prepared-statement/transaction
+    // overhead of `INSERT` (each `execute()` would otherwise auto-commit on its own).
+    let mut functions = connection.appender("functions")?;
     for row in &batch.functions {
-        functions.execute(params![
+        functions.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.name,
             &row.visibility,
-            row.param_count,
+            row.param_count as i64,
             &row.return_type,
-            row.complexity,
+            row.complexity as i64,
             row.has_test,
         ])?;
     }
+    functions.flush()?;
 
-    let mut calls = connection.prepare(
-        "INSERT INTO calls (file, line, caller, callee, is_external)
-         VALUES (?, ?, ?, ?, ?)",
-    )?;
+    let mut calls = connection.appender("calls")?;
     for row in &batch.calls {
-        calls.execute(params![
+        calls.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.caller,
             &row.callee,
             row.is_external,
         ])?;
     }
+    calls.flush()?;
 
-    let mut imports = connection.prepare(
-        "INSERT INTO imports (file, line, module, alias, is_std)
-         VALUES (?, ?, ?, ?, ?)",
-    )?;
+    let mut imports = connection.appender("imports")?;
     for row in &batch.imports {
-        imports.execute(params![
+        imports.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.module,
             &row.alias,
             row.is_std
         ])?;
     }
+    imports.flush()?;
 
-    let mut structs = connection.prepare(
-        "INSERT INTO structs (file, line, name, field_count, visibility, implements)
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )?;
+    let mut structs = connection.appender("structs")?;
     for row in &batch.structs {
-        structs.execute(params![
+        structs.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.name,
-            row.field_count,
+            row.field_count as i64,
             &row.visibility,
             &row.implements,
         ])?;
     }
+    structs.flush()?;
 
-    let mut variables = connection.prepare(
-        "INSERT INTO variables (file, line, name, type_hint, scope, is_mutated)
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )?;
+    let mut variables = connection.appender("variables")?;
     for row in &batch.variables {
-        variables.execute(params![
+        variables.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.name,
             &row.type_hint,
             &row.scope,
             row.is_mutated,
         ])?;
     }
+    variables.flush()?;
 
-    let mut comments = connection.prepare(
-        "INSERT INTO comments (file, line, text, attached_to, is_doc)
-         VALUES (?, ?, ?, ?, ?)",
-    )?;
+    let mut comments = connection.appender("comments")?;
     for row in &batch.comments {
-        comments.execute(params![
+        comments.append_row(params![
             &row.file,
-            row.line,
+            row.line as i64,
             &row.text,
             &row.attached_to,
             row.is_doc,
         ])?;
     }
+    comments.flush()?;
 
     Ok(())
 }

@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ignore::WalkBuilder;
 use ql_adapters::adapter_for_path;
 use ql_ast::{TableBatch, second_pass, walk_source};
 use serde::{Deserialize, Serialize};
@@ -19,32 +20,67 @@ pub fn is_source_file(path: &Path) -> bool {
     adapter_for_path(path).is_some()
 }
 
+/// Directories that are always skipped during traversal, even if a project has
+/// no `.gitignore` (or doesn't list them in one). These are common build output
+/// and dependency directories that should never be indexed as source.
+const DEFAULT_IGNORED_DIRS: &[&str] = &[
+    "target",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".git",
+    "vendor",
+    "dist",
+    "build",
+    "__pycache__",
+];
+
+/// Recursively lists every file under `root`, paired with its path relative to
+/// `root`.
+///
+/// Traversal honors `.gitignore`/`.ignore` files and `.qlignore` (a `ql`-specific
+/// ignore file using the same syntax) found within `root`, and skips hidden files
+/// and directories (including `.git`), via the `ignore` crate. On top of that,
+/// [`DEFAULT_IGNORED_DIRS`] is always skipped regardless of ignore files. Symlinks
+/// are not followed, so there is no need to track visited directories, and there
+/// is no limit on the number of directories visited.
 fn walk_relative_files(root: &Path) -> Vec<(PathBuf, String)> {
     let mut files = Vec::new();
-    let mut dirs = vec![root.to_path_buf()];
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
 
-    while let Some(dir) = dirs.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+    let mut builder = WalkBuilder::new(root);
+    builder
+        // Respect `.gitignore`/`.ignore` even outside of a git repository (e.g. a
+        // plain directory extracted from an archive).
+        .require_git(false)
+        // Only consider ignore files within `root` itself, so analysis results
+        // don't depend on `.gitignore` files elsewhere on disk (e.g. an ancestor
+        // directory outside the analyzed project).
+        .parents(false)
+        .add_custom_ignore_filename(".qlignore")
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || !entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| DEFAULT_IGNORED_DIRS.contains(&name))
+        });
+
+    for entry in builder.build() {
+        let Ok(entry) = entry else { continue };
+        if !entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+        {
+            continue;
+        }
+        let path = entry.into_path();
+        let Ok(relative) = path.strip_prefix(root) else {
             continue;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let canon = path.canonicalize().unwrap_or_else(|_| path);
-                if visited.insert(canon.clone()) && dirs.len() < 1000 {
-                    dirs.push(canon);
-                }
-                continue;
-            }
-            let relative = match path.strip_prefix(root) {
-                Ok(r) => r.to_string_lossy().into_owned(),
-                Err(_) => continue,
-            };
-            files.push((path, relative));
-        }
+        let relative = relative.to_string_lossy().into_owned();
+        files.push((path, relative));
     }
+
     files
 }
 
@@ -115,14 +151,13 @@ pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
 
         let metadata = std::fs::metadata(&path)
             .map_err(|e| format!("error: failed to stat {}: {e}", path.display()))?;
-        if let Some(key) = cache_key(&metadata) {
-            if let Some(cached) = cache.remove(&relative) {
-                if cached.matches(key, metadata.len()) {
-                    batch.extend(cached.batch.clone());
-                    next_cache.insert(relative, cached);
-                    continue;
-                }
-            }
+        if let Some(key) = cache_key(&metadata)
+            && let Some(cached) = cache.remove(&relative)
+            && cached.matches(key, metadata.len())
+        {
+            batch.extend(cached.batch.clone());
+            next_cache.insert(relative, cached);
+            continue;
         }
 
         let source = std::fs::read_to_string(&path)
