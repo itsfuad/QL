@@ -79,7 +79,7 @@ ql "SELECT name, type_hint, scope, file, line FROM variables WHERE is_mutated = 
 6. Show doc comments attached to code.
 
 ```bash
-ql "SELECT text, attached_to, file, line FROM comments WHERE is_doc = true AND attached_to IS NOT NULL ORDER BY file, line" .
+ql "SELECT text, attached_to, file, line FROM comments WHERE is_doc = true AND attached_to != '' ORDER BY file, line" .
 ```
 
 7. Find functions that mention tests.
