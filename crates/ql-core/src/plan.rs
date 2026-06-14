@@ -46,6 +46,16 @@ fn render_select(statement: &SelectStatement) -> Result<String, PlanError> {
         sql.push_str(&render_expr(where_clause)?);
     }
 
+    if !statement.group_by.is_empty() {
+        sql.push_str(" GROUP BY ");
+        sql.push_str(&render_group_by(&statement.group_by)?);
+    }
+
+    if let Some(having) = &statement.having {
+        sql.push_str(" HAVING ");
+        sql.push_str(&render_expr(having)?);
+    }
+
     if !statement.order_by.is_empty() {
         sql.push_str(" ORDER BY ");
         sql.push_str(&render_order_by(&statement.order_by)?);
@@ -109,6 +119,16 @@ fn render_order_by(clauses: &[OrderBy]) -> Result<String, PlanError> {
             render_identifier(&clause.column)?,
             direction
         ));
+    }
+
+    Ok(rendered.join(", "))
+}
+
+fn render_group_by(columns: &[String]) -> Result<String, PlanError> {
+    let mut rendered = Vec::with_capacity(columns.len());
+
+    for column in columns {
+        rendered.push(render_identifier(column)?);
     }
 
     Ok(rendered.join(", "))
@@ -254,6 +274,19 @@ mod tests {
     }
 
     #[test]
+    fn renders_group_by_and_having() {
+        let statement =
+            parse("SELECT DISTINCT file FROM functions GROUP BY file HAVING complexity > 10");
+
+        let plan = plan_select(&statement).expect("query should plan");
+
+        assert_eq!(
+            plan.sql,
+            "SELECT DISTINCT file FROM functions GROUP BY file HAVING (complexity > 10)"
+        );
+    }
+
+    #[test]
     fn rejects_invalid_identifier() {
         let statement = SelectStatement {
             select: vec![crate::sql::SelectItem::Column {
@@ -267,6 +300,8 @@ mod tests {
             },
             joins: Vec::new(),
             where_clause: None,
+            group_by: Vec::new(),
+            having: None,
             order_by: Vec::new(),
             limit: None,
         };

@@ -120,6 +120,21 @@ impl Parser {
         } else {
             None
         };
+        let group_by = if self.matches_kind(|kind| matches!(kind, TokenKind::Group)) {
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::By)) {
+                self.record_error(self.error_here("expected BY after GROUP"));
+                self.recover_to_clause_boundary();
+                self.matches_kind(|kind| matches!(kind, TokenKind::By));
+            }
+            self.parse_or_recover(Vec::new(), Parser::parse_group_by)
+        } else {
+            Vec::new()
+        };
+        let having = if self.matches_kind(|kind| matches!(kind, TokenKind::Having)) {
+            self.parse_or_recover(None, |parser| parser.parse_expression().map(Some))
+        } else {
+            None
+        };
         let order_by = if self.matches_kind(|kind| matches!(kind, TokenKind::Order)) {
             if !self.matches_kind(|kind| matches!(kind, TokenKind::By)) {
                 self.record_error(self.error_here("expected BY after ORDER"));
@@ -150,6 +165,8 @@ impl Parser {
                 from,
                 joins,
                 where_clause,
+                group_by,
+                having,
                 order_by,
                 limit,
             })
@@ -184,8 +201,10 @@ impl Parser {
             if matches!(
                 token.kind,
                 TokenKind::From
+                    | TokenKind::Group
                     | TokenKind::Join
                     | TokenKind::Where
+                    | TokenKind::Having
                     | TokenKind::Order
                     | TokenKind::Limit
                     | TokenKind::Semicolon
@@ -272,6 +291,19 @@ impl Parser {
         }
 
         Ok(clauses)
+    }
+
+    fn parse_group_by(&mut self) -> Result<Vec<String>, ParseError> {
+        let mut columns = Vec::new();
+
+        loop {
+            columns.push(self.parse_identifier_path()?);
+            if !self.matches_kind(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+        }
+
+        Ok(columns)
     }
 
     fn parse_limit(&mut self) -> Result<u64, ParseError> {
@@ -575,6 +607,8 @@ mod tests {
                 },
                 joins: vec![],
                 where_clause: None,
+                group_by: vec![],
+                having: None,
                 order_by: vec![],
                 limit: None,
             }
@@ -882,6 +916,24 @@ mod tests {
                 name: "functions".to_string(),
                 alias: Some("f".to_string()),
             }
+        );
+    }
+
+    #[test]
+    fn parses_group_by_and_having() {
+        let query =
+            parse_query("SELECT DISTINCT file FROM functions GROUP BY file HAVING complexity > 10")
+                .expect("query should parse");
+
+        assert!(query.distinct);
+        assert_eq!(query.group_by, vec!["file".to_string()]);
+        assert_eq!(
+            query.having,
+            Some(Expr::Binary {
+                left: Box::new(Expr::Identifier("complexity".to_string())),
+                operator: BinaryOperator::Gt,
+                right: Box::new(Expr::Literal(Literal::Integer(10))),
+            })
         );
     }
 }

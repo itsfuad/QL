@@ -5,6 +5,8 @@ pub struct SelectStatement {
     pub from: TableRef,
     pub joins: Vec<Join>,
     pub where_clause: Option<Expr>,
+    pub group_by: Vec<String>,
+    pub having: Option<Expr>,
     pub order_by: Vec<OrderBy>,
     pub limit: Option<u64>,
 }
