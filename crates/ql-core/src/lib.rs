@@ -10,6 +10,7 @@ pub use plan::{PlanError, PlannedQuery, plan_select};
 pub use protocol::QueryResult;
 pub use query::{function_columns, query_all_functions, select_functions};
 pub use sql::{
-    BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, ParseError, SelectItem,
-    SelectStatement, TableRef, UnaryOperator, parse_query,
+    BinaryOperator, Diagnostic, Expr, Join, JoinKind, Label, Literal, OrderBy, OrderDirection,
+    ParseError, SelectItem, SelectStatement, Severity, SourceFile, Span, TableRef, UnaryOperator,
+    parse_query,
 };

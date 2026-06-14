@@ -2,6 +2,7 @@
 pub struct Token {
     pub kind: TokenKind,
     pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,7 +151,11 @@ pub fn lex(input: &str) -> Result<Vec<Token>, usize> {
             _ => return Err(start),
         };
 
-        tokens.push(Token { kind, start });
+        tokens.push(Token {
+            kind,
+            start,
+            end: index,
+        });
     }
 
     Ok(tokens)

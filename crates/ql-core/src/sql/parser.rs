@@ -2,30 +2,81 @@ use super::ast::{
     BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
     SelectStatement, TableRef, UnaryOperator,
 };
+use super::diagnostic::{Diagnostic, Label, Severity, SourceFile, Span};
 use super::lexer::{Token, TokenKind, lex};
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    pub message: String,
-    pub position: usize,
+    pub diagnostic: Diagnostic,
 }
 
 pub fn parse_query(input: &str) -> Result<SelectStatement, ParseError> {
-    let tokens = lex(input).map_err(|position| ParseError {
-        message: "invalid token".to_string(),
-        position,
-    })?;
+    let tokens = lex(input).map_err(|position| ParseError::invalid_token(position))?;
     Parser::new(tokens).parse_select()
+}
+
+impl ParseError {
+    fn invalid_token(position: usize) -> Self {
+        Self::new("E000", "invalid token", Span::point(0, position))
+    }
+
+    fn new(code: &str, message: &str, span: Span) -> Self {
+        Self {
+            diagnostic: Diagnostic {
+                severity: Severity::Error,
+                code: Some(code.to_string()),
+                message: message.to_string(),
+                labels: vec![Label {
+                    span,
+                    message: String::new(),
+                }],
+                notes: Vec::new(),
+            },
+        }
+    }
+
+    fn at(message: &str, span: Span) -> Self {
+        Self::new("E001", message, span)
+    }
+
+    pub fn message(&self) -> &str {
+        &self.diagnostic.message
+    }
+
+    pub fn position(&self) -> usize {
+        self.diagnostic
+            .labels
+            .first()
+            .map_or(0, |label| label.span.start)
+    }
+
+    pub fn render(&self, file_name: &str, input: &str) -> String {
+        let file = SourceFile::new(file_name, input);
+        self.diagnostic.render(&[file])
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
 }
 
 struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    eof: usize,
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, index: 0 }
+        let eof = tokens.last().map_or(0, |token| token.end);
+        Self {
+            tokens,
+            index: 0,
+            eof,
+        }
     }
 
     fn parse_select(&mut self) -> Result<SelectStatement, ParseError> {
@@ -336,10 +387,10 @@ impl Parser {
     }
 
     fn error_here(&self, message: &str) -> ParseError {
-        ParseError {
-            message: message.to_string(),
-            position: self.peek().map_or(0, |token| token.start),
-        }
+        let span = self.peek().map_or(Span::point(0, self.eof), |token| {
+            Span::new(0, token.start, token.end)
+        });
+        ParseError::at(message, span)
     }
 }
 
@@ -418,7 +469,7 @@ mod tests {
         BinaryOperator, Expr, Join, JoinKind, Literal, OrderBy, OrderDirection, SelectItem,
         SelectStatement, TableRef, UnaryOperator,
     };
-    use super::{ParseError, parse_query};
+    use super::parse_query;
 
     #[test]
     fn parses_select_wildcard() {
@@ -628,13 +679,8 @@ mod tests {
     fn reports_missing_from() {
         let error = parse_query("SELECT name functions").expect_err("query should fail");
 
-        assert_eq!(
-            error,
-            ParseError {
-                message: "expected FROM".to_string(),
-                position: 12,
-            }
-        );
+        assert_eq!(error.message(), "expected FROM");
+        assert_eq!(error.position(), 12);
     }
 
     #[test]
@@ -642,12 +688,7 @@ mod tests {
         let error =
             parse_query("SELECT name FROM functions WHERE @").expect_err("query should fail");
 
-        assert_eq!(
-            error,
-            ParseError {
-                message: "invalid token".to_string(),
-                position: 33,
-            }
-        );
+        assert_eq!(error.message(), "invalid token");
+        assert_eq!(error.position(), 33);
     }
 }

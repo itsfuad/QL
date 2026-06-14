@@ -99,7 +99,7 @@ fn main() {
     }
 
     let statement = parse_query(query).unwrap_or_else(|e| {
-        eprintln!("error: {} at position {}", e.message, e.position);
+        eprintln!("{}", e.render("query.sql", query));
         process::exit(1);
     });
     let batch = collect_source_batch(&root).unwrap_or_else(|e| {
