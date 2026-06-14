@@ -381,21 +381,21 @@ mod tests {
     #[test]
     fn maps_typescript_items() {
         let source = r#"
-import { readFileSync as readFile } from "fs";
+    import { readFileSync as readFile } from "fs";
 
-class Person implements Greeter, Serializable {
-  name: string;
-  greet(message: string): string {
+    class Person implements Greeter, Serializable {
+      name: string;
+      greet(message: string): string {
     return message;
-  }
-}
+      }
+    }
 
-function add(a: number, b: number): number {
-  return a + b;
-}
+    function add(a: number, b: number): number {
+      return a + b;
+    }
 
-const answer: number = 42;
-"#;
+    const answer: number = 42;
+    "#;
 
         let batch = walk_source(&TypeScriptAdapter, "main.ts", source)
             .expect("typescript grammar should parse");

@@ -351,12 +351,12 @@ mod tests {
     #[test]
     fn maps_rust_functions() {
         let source = r#"
-fn main() {}
+    fn main() {}
 
-pub fn add(a: i32, b: i32) -> i32 {
+    pub fn add(a: i32, b: i32) -> i32 {
     a + b
-}
-"#;
+    }
+    "#;
 
         let batch =
             walk_source(&RustAdapter, "main.rs", source).expect("rust grammar should parse");
@@ -373,22 +373,22 @@ pub fn add(a: i32, b: i32) -> i32 {
     #[test]
     fn maps_calls_imports_structs_variables_and_comments() {
         let source = r#"
-use std::fmt as fmt_alias;
+    use std::fmt as fmt_alias;
 
-/// User doc
-pub struct User {
+    /// User doc
+    pub struct User {
     id: i32,
     name: String,
-}
+    }
 
-const LIMIT: usize = 10;
+    const LIMIT: usize = 10;
 
-fn run() {
+    fn run() {
     let mut total: i32 = 0;
     helper();
     std::mem::drop(total);
-}
-"#;
+    }
+    "#;
 
         let batch =
             walk_source(&RustAdapter, "main.rs", source).expect("rust grammar should parse");
@@ -421,12 +421,12 @@ fn run() {
     #[test]
     fn maps_impl_traits_to_structs() {
         let source = r#"
-trait Greeter {}
+    trait Greeter {}
 
-pub struct User {}
+    pub struct User {}
 
-impl Greeter for User {}
-"#;
+    impl Greeter for User {}
+    "#;
 
         let batch =
             walk_source(&RustAdapter, "main.rs", source).expect("rust grammar should parse");
@@ -439,7 +439,7 @@ impl Greeter for User {}
     #[test]
     fn counts_complexity() {
         let source = r#"
-fn complex(n: i32) -> i32 {
+    fn complex(n: i32) -> i32 {
     if n > 0 {
         return 1;
     }
@@ -451,8 +451,8 @@ fn complex(n: i32) -> i32 {
     }
 
     0
-}
-"#;
+    }
+    "#;
 
         let batch =
             walk_source(&RustAdapter, "main.rs", source).expect("rust grammar should parse");

@@ -281,17 +281,17 @@ mod tests {
     #[test]
     fn maps_python_items() {
         let source = r#"
-import os
+    import os
 
-class User(BaseUser, Serializable):
+    class User(BaseUser, Serializable):
     def greet(self, message):
         return message
 
-def add(a, b):
+    def add(a, b):
     return a + b
 
-x = 1
-"#;
+    x = 1
+    "#;
 
         let batch =
             walk_source(&PythonAdapter, "main.py", source).expect("python grammar should parse");

@@ -356,14 +356,14 @@ mod tests {
     #[test]
     fn maps_go_function_declarations() {
         let source = r#"
-package main
+    package main
 
-func main() {}
+    func main() {}
 
-func add(a int, b int) int {
+    func add(a int, b int) int {
     return a + b
-}
-"#;
+    }
+    "#;
 
         let batch = walk_source(&GoAdapter, "main.go", source).expect("go grammar should parse");
 
