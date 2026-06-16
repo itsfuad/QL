@@ -23,6 +23,18 @@
     {
       "name": "comments",
       "columns": ["file", "line", "text", "attached_to", "is_doc"]
+    },
+    {
+      "name": "fn_fingerprints",
+      "columns": ["file", "line", "name", "param_count", "complexity", "nesting_depth", "branch_count", "loop_count", "call_count", "unique_callee_count", "return_count", "stmt_count", "has_error_handling"]
+    },
+    {
+      "name": "fn_callsets",
+      "columns": ["file", "line", "name", "callee"]
+    },
+    {
+      "name": "similarities",
+      "columns": ["file_a", "line_a", "name_a", "file_b", "line_b", "name_b", "structural_score", "behavioral_score", "combined_score"]
     }
   ]
 }

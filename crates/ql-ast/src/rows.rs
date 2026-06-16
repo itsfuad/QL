@@ -59,7 +59,45 @@ pub struct CommentRow {
     pub is_doc: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct FingerprintRow {
+    pub file: String,
+    pub line: usize,
+    pub name: String,
+    pub param_count: usize,
+    pub complexity: usize,
+    pub nesting_depth: usize,
+    pub branch_count: usize,
+    pub loop_count: usize,
+    pub call_count: usize,
+    pub unique_callee_count: usize,
+    pub return_count: usize,
+    pub stmt_count: usize,
+    pub has_error_handling: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct CallSetRow {
+    pub file: String,
+    pub line: usize,
+    pub name: String,
+    pub callee: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SimilarityRow {
+    pub file_a: String,
+    pub line_a: usize,
+    pub name_a: String,
+    pub file_b: String,
+    pub line_b: usize,
+    pub name_b: String,
+    pub structural_score: f64,
+    pub behavioral_score: f64,
+    pub combined_score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct TableBatch {
     pub current_file: String,
     pub functions: Vec<FunctionRow>,
@@ -68,6 +106,9 @@ pub struct TableBatch {
     pub structs: Vec<StructRow>,
     pub variables: Vec<VariableRow>,
     pub comments: Vec<CommentRow>,
+    pub fingerprints: Vec<FingerprintRow>,
+    pub callsets: Vec<CallSetRow>,
+    pub similarities: Vec<SimilarityRow>,
 }
 
 impl TableBatch {
@@ -85,5 +126,8 @@ impl TableBatch {
         self.structs.append(&mut other.structs);
         self.variables.append(&mut other.variables);
         self.comments.append(&mut other.comments);
+        self.fingerprints.append(&mut other.fingerprints);
+        self.callsets.append(&mut other.callsets);
+        self.similarities.append(&mut other.similarities);
     }
 }

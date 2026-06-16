@@ -39,6 +39,9 @@ Language adapters populate the shared schema:
 - `structs`
 - `variables`
 - `comments`
+- `fn_fingerprints` — structural metrics per function
+- `fn_callsets` — callee sets per function
+- `similarities` — pairwise similarity scores
 
 Schema source lives in [schema/tables.json](schema/tables.json).
 
@@ -106,6 +109,30 @@ ql --format json "SELECT name, file, line FROM structs ORDER BY file, line LIMIT
 ql --format csv "SELECT name, file, line FROM functions ORDER BY file, line LIMIT 50" .
 ```
 
+11. Find structurally similar functions (code clones).
+
+```bash
+ql "SELECT name_a, file_a, name_b, file_b, combined_score FROM similarities ORDER BY combined_score DESC LIMIT 20" .
+```
+
+12. Find functions similar to a specific one.
+
+```bash
+ql "SELECT name_b, file_b, combined_score FROM similarities WHERE name_a = 'parse_config' ORDER BY combined_score DESC" .
+```
+
+13. Find functions with similar call patterns.
+
+```bash
+ql "SELECT s.name_a, s.name_b, s.behavioral_score FROM similarities s WHERE s.behavioral_score > 0.8 ORDER BY s.behavioral_score DESC" .
+```
+
+14. Inspect structural fingerprint of a function.
+
+```bash
+ql "SELECT name, file, complexity, nesting_depth, branch_count, loop_count, call_count FROM fn_fingerprints ORDER BY complexity DESC LIMIT 20" .
+```
+
 ## Architecture
 
 ```
@@ -130,6 +157,7 @@ Single binary. No subprocess protocol. Rust CLI only.
 - Planner maps SQL AST to DuckDB execution
 - CLI with table/JSON/CSV output and watch mode
 - VS Code extension sidebar for running queries and opening rows
+- Structural and behavioral code similarity via function fingerprints and call patterns
 
 ## Development
 

@@ -1,6 +1,6 @@
 use ql_ast::{
-    CallRow, CommentRow, FunctionRow, ImportRow, LanguageAdapter, StructRow, TableBatch,
-    VariableRow,
+    CallRow, CommentRow, FingerprintRow, FunctionRow, ImportRow, LanguageAdapter, StructRow,
+    TableBatch, VariableRow,
 };
 use tree_sitter::Node;
 
@@ -69,6 +69,12 @@ impl RustAdapter {
             .trim()
             .to_string();
 
+        let complexity = Self::count_complexity(node);
+
+        let fingerprint =
+            extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
+        rows.fingerprints.push(fingerprint);
+
         rows.functions.push(FunctionRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
@@ -81,7 +87,7 @@ impl RustAdapter {
             .to_string(),
             param_count,
             return_type,
-            complexity: Self::count_complexity(node),
+            complexity,
             has_test: false,
         });
     }
@@ -296,6 +302,97 @@ impl LanguageAdapter for RustAdapter {
             "line_comment" | "block_comment" => self.map_comment(node, source, rows),
             _ => {}
         }
+    }
+}
+
+fn extract_fingerprint(
+    node: tree_sitter::Node<'_>,
+    file: &str,
+    name: &str,
+    param_count: usize,
+    complexity: usize,
+) -> FingerprintRow {
+    const BRANCHES: &[&str] = &["if_expression", "match_expression", "match_arm"];
+    const LOOPS: &[&str] = &["for_expression", "while_expression", "loop_expression"];
+    const CALLS: &[&str] = &["call_expression"];
+    const RETURNS: &[&str] = &["return_expression"];
+    const STMTS: &[&str] = &[
+        "let_declaration",
+        "expression_statement",
+        "return_expression",
+        "if_expression",
+        "for_expression",
+        "while_expression",
+        "loop_expression",
+        "match_expression",
+    ];
+    const ERROR_HANDLING: &[&str] = &["try_expression"];
+
+    let mut nesting_depth = 0usize;
+    let mut branch_count = 0usize;
+    let mut loop_count = 0usize;
+    let mut call_count = 0usize;
+    let mut return_count = 0usize;
+    let mut stmt_count = 0usize;
+    let mut has_error_handling = false;
+
+    let mut stack: Vec<(tree_sitter::Node<'_>, usize)> = vec![(node, 0)];
+
+    while let Some((current, depth)) = stack.pop() {
+        let kind = current.kind();
+
+        if BRANCHES.contains(&kind) {
+            branch_count += 1;
+            nesting_depth = nesting_depth.max(depth);
+        }
+        if LOOPS.contains(&kind) {
+            loop_count += 1;
+            nesting_depth = nesting_depth.max(depth);
+        }
+        if CALLS.contains(&kind) {
+            call_count += 1;
+        }
+        if RETURNS.contains(&kind) {
+            return_count += 1;
+        }
+        if STMTS.contains(&kind) {
+            stmt_count += 1;
+        }
+        if ERROR_HANDLING.contains(&kind) {
+            has_error_handling = true;
+        }
+
+        let child_depth = if BRANCHES.contains(&kind) || LOOPS.contains(&kind) {
+            depth + 1
+        } else {
+            depth
+        };
+
+        let mut cursor = current.walk();
+        if cursor.goto_first_child() {
+            loop {
+                stack.push((cursor.node(), child_depth));
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+
+    FingerprintRow {
+        file: file.to_string(),
+        line: node.start_position().row + 1,
+        name: name.to_string(),
+        param_count,
+        complexity,
+        nesting_depth,
+        branch_count,
+        loop_count,
+        call_count,
+        unique_callee_count: 0,
+        return_count,
+        stmt_count,
+        has_error_handling,
     }
 }
 

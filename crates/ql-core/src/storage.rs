@@ -58,6 +58,38 @@ fn create_schema(connection: &Connection) -> Result<(), duckdb::Error> {
             text TEXT NOT NULL,
             attached_to TEXT NOT NULL,
             is_doc BOOLEAN NOT NULL
+        );
+        CREATE TABLE fn_fingerprints (
+            file TEXT NOT NULL,
+            line BIGINT NOT NULL,
+            name TEXT NOT NULL,
+            param_count BIGINT NOT NULL,
+            complexity BIGINT NOT NULL,
+            nesting_depth BIGINT NOT NULL,
+            branch_count BIGINT NOT NULL,
+            loop_count BIGINT NOT NULL,
+            call_count BIGINT NOT NULL,
+            unique_callee_count BIGINT NOT NULL,
+            return_count BIGINT NOT NULL,
+            stmt_count BIGINT NOT NULL,
+            has_error_handling BOOLEAN NOT NULL
+        );
+        CREATE TABLE fn_callsets (
+            file TEXT NOT NULL,
+            line BIGINT NOT NULL,
+            name TEXT NOT NULL,
+            callee TEXT NOT NULL
+        );
+        CREATE TABLE similarities (
+            file_a TEXT NOT NULL,
+            line_a BIGINT NOT NULL,
+            name_a TEXT NOT NULL,
+            file_b TEXT NOT NULL,
+            line_b BIGINT NOT NULL,
+            name_b TEXT NOT NULL,
+            structural_score DOUBLE NOT NULL,
+            behavioral_score DOUBLE NOT NULL,
+            combined_score DOUBLE NOT NULL
         );",
     )
 }
@@ -142,6 +174,48 @@ fn insert_batch(connection: &Connection, batch: &TableBatch) -> Result<(), duckd
         ])?;
     }
     comments.flush()?;
+
+    let mut fingerprints = connection.appender("fn_fingerprints")?;
+    for row in &batch.fingerprints {
+        fingerprints.append_row(params![
+            &row.file,
+            row.line as i64,
+            &row.name,
+            row.param_count as i64,
+            row.complexity as i64,
+            row.nesting_depth as i64,
+            row.branch_count as i64,
+            row.loop_count as i64,
+            row.call_count as i64,
+            row.unique_callee_count as i64,
+            row.return_count as i64,
+            row.stmt_count as i64,
+            row.has_error_handling,
+        ])?;
+    }
+    fingerprints.flush()?;
+
+    let mut callsets = connection.appender("fn_callsets")?;
+    for row in &batch.callsets {
+        callsets.append_row(params![&row.file, row.line as i64, &row.name, &row.callee,])?;
+    }
+    callsets.flush()?;
+
+    let mut similarities = connection.appender("similarities")?;
+    for row in &batch.similarities {
+        similarities.append_row(params![
+            &row.file_a,
+            row.line_a as i64,
+            &row.name_a,
+            &row.file_b,
+            row.line_b as i64,
+            &row.name_b,
+            row.structural_score,
+            row.behavioral_score,
+            row.combined_score,
+        ])?;
+    }
+    similarities.flush()?;
 
     Ok(())
 }
