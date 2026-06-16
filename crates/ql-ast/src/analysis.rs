@@ -3,10 +3,14 @@ use std::path::Path;
 
 use crate::rows::TableBatch;
 
+use crate::similarity::{compute_similarities, extract_callsets};
+
 pub fn second_pass(batch: &mut TableBatch) {
     resolve_has_test(batch);
     resolve_implements(batch);
     resolve_comment_attachments(batch);
+    extract_callsets(batch);
+    compute_similarities(batch, 10, 0.6);
 }
 
 fn resolve_has_test(batch: &mut TableBatch) {
