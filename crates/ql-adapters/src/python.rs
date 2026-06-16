@@ -262,14 +262,26 @@ impl LanguageAdapter for PythonAdapter {
     }
 }
 
-fn extract_fingerprint(node: tree_sitter::Node<'_>, file: &str, name: &str, param_count: usize, complexity: usize) -> FingerprintRow {
+fn extract_fingerprint(
+    node: tree_sitter::Node<'_>,
+    file: &str,
+    name: &str,
+    param_count: usize,
+    complexity: usize,
+) -> FingerprintRow {
     const BRANCHES: &[&str] = &["if_statement", "elif_clause", "match_case", "except_clause"];
     const LOOPS: &[&str] = &["for_statement", "while_statement"];
     const CALLS: &[&str] = &["call"];
     const RETURNS: &[&str] = &["return_statement"];
     const STMTS: &[&str] = &[
-        "assignment", "return_statement", "if_statement", "for_statement",
-        "while_statement", "with_statement", "raise_statement", "try_statement",
+        "assignment",
+        "return_statement",
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "with_statement",
+        "raise_statement",
+        "try_statement",
         "expression_statement",
     ];
     const ERROR_HANDLING: &[&str] = &["try_statement", "raise_statement"];

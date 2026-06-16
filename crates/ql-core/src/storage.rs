@@ -197,12 +197,7 @@ fn insert_batch(connection: &Connection, batch: &TableBatch) -> Result<(), duckd
 
     let mut callsets = connection.appender("fn_callsets")?;
     for row in &batch.callsets {
-        callsets.append_row(params![
-            &row.file,
-            row.line as i64,
-            &row.name,
-            &row.callee,
-        ])?;
+        callsets.append_row(params![&row.file, row.line as i64, &row.name, &row.callee,])?;
     }
     callsets.flush()?;
 

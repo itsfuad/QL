@@ -367,15 +367,39 @@ impl LanguageAdapter for TypeScriptAdapter {
     }
 }
 
-fn extract_fingerprint(node: tree_sitter::Node<'_>, file: &str, name: &str, param_count: usize, complexity: usize) -> FingerprintRow {
-    const BRANCHES: &[&str] = &["if_statement", "switch_case", "conditional_expression", "catch_clause"];
-    const LOOPS: &[&str] = &["for_statement", "for_in_statement", "while_statement", "do_statement"];
+fn extract_fingerprint(
+    node: tree_sitter::Node<'_>,
+    file: &str,
+    name: &str,
+    param_count: usize,
+    complexity: usize,
+) -> FingerprintRow {
+    const BRANCHES: &[&str] = &[
+        "if_statement",
+        "switch_case",
+        "conditional_expression",
+        "catch_clause",
+    ];
+    const LOOPS: &[&str] = &[
+        "for_statement",
+        "for_in_statement",
+        "while_statement",
+        "do_statement",
+    ];
     const CALLS: &[&str] = &["call_expression"];
     const RETURNS: &[&str] = &["return_statement"];
     const STMTS: &[&str] = &[
-        "lexical_declaration", "variable_declaration", "expression_statement",
-        "return_statement", "if_statement", "for_statement", "for_in_statement",
-        "while_statement", "switch_statement", "throw_statement", "try_statement",
+        "lexical_declaration",
+        "variable_declaration",
+        "expression_statement",
+        "return_statement",
+        "if_statement",
+        "for_statement",
+        "for_in_statement",
+        "while_statement",
+        "switch_statement",
+        "throw_statement",
+        "try_statement",
     ];
     const ERROR_HANDLING: &[&str] = &["try_statement", "throw_statement"];
 

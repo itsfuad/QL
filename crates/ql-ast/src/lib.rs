@@ -9,4 +9,6 @@ pub use rows::{
     CallRow, CallSetRow, CommentRow, FingerprintRow, FunctionRow, ImportRow, SimilarityRow,
     StructRow, TableBatch, VariableRow,
 };
-pub use similarity::{compute_similarities, cosine_similarity, extract_callsets, jaccard_similarity};
+pub use similarity::{
+    compute_similarities, cosine_similarity, extract_callsets, jaccard_similarity,
+};

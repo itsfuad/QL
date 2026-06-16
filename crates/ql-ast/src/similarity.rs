@@ -99,7 +99,10 @@ pub fn compute_similarities(batch: &mut TableBatch, top_k: usize, threshold: f64
     let mut callset_index: HashMap<FnKey, HashSet<String>> = HashMap::new();
     for cs in &batch.callsets {
         let key = (cs.file.clone(), cs.line, cs.name.clone());
-        callset_index.entry(key).or_default().insert(cs.callee.clone());
+        callset_index
+            .entry(key)
+            .or_default()
+            .insert(cs.callee.clone());
     }
 
     let empty_set: HashSet<String> = HashSet::new();
@@ -163,11 +166,7 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom == 0.0 { 0.0 } else { dot / denom }
 }
 
 pub fn jaccard_similarity(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
@@ -230,8 +229,14 @@ mod tests {
 
     #[test]
     fn test_jaccard_similarity_partial() {
-        let a: HashSet<String> = ["foo", "bar", "baz"].iter().map(|s| s.to_string()).collect();
-        let b: HashSet<String> = ["foo", "bar", "qux"].iter().map(|s| s.to_string()).collect();
+        let a: HashSet<String> = ["foo", "bar", "baz"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let b: HashSet<String> = ["foo", "bar", "qux"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let score = jaccard_similarity(&a, &b);
         assert!((score - 0.5).abs() < 1e-9);
     }

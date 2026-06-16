@@ -93,7 +93,8 @@ impl GoAdapter {
 
         let complexity = Self::count_complexity(node, source);
 
-        let fingerprint = extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
+        let fingerprint =
+            extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
@@ -132,7 +133,8 @@ impl GoAdapter {
 
         let complexity = Self::count_complexity(node, source);
 
-        let fingerprint = extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
+        let fingerprint =
+            extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
@@ -337,15 +339,32 @@ impl GoAdapter {
     }
 }
 
-fn extract_fingerprint(node: tree_sitter::Node<'_>, file: &str, name: &str, param_count: usize, complexity: usize) -> FingerprintRow {
-    const BRANCHES: &[&str] = &["if_statement", "case_clause", "select_statement", "switch_statement"];
+fn extract_fingerprint(
+    node: tree_sitter::Node<'_>,
+    file: &str,
+    name: &str,
+    param_count: usize,
+    complexity: usize,
+) -> FingerprintRow {
+    const BRANCHES: &[&str] = &[
+        "if_statement",
+        "case_clause",
+        "select_statement",
+        "switch_statement",
+    ];
     const LOOPS: &[&str] = &["for_statement"];
     const CALLS: &[&str] = &["call_expression"];
     const RETURNS: &[&str] = &["return_statement"];
     const STMTS: &[&str] = &[
-        "short_var_declaration", "assignment_statement", "return_statement",
-        "if_statement", "for_statement", "switch_statement", "go_statement",
-        "defer_statement", "expression_statement",
+        "short_var_declaration",
+        "assignment_statement",
+        "return_statement",
+        "if_statement",
+        "for_statement",
+        "switch_statement",
+        "go_statement",
+        "defer_statement",
+        "expression_statement",
     ];
     const ERROR_HANDLING: &[&str] = &["defer_statement"];
 

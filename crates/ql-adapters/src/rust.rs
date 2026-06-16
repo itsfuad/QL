@@ -1,4 +1,7 @@
-use ql_ast::{CallRow, CommentRow, FingerprintRow, FunctionRow, ImportRow, LanguageAdapter, StructRow, TableBatch, VariableRow};
+use ql_ast::{
+    CallRow, CommentRow, FingerprintRow, FunctionRow, ImportRow, LanguageAdapter, StructRow,
+    TableBatch, VariableRow,
+};
 use tree_sitter::Node;
 
 pub struct RustAdapter;
@@ -68,7 +71,8 @@ impl RustAdapter {
 
         let complexity = Self::count_complexity(node);
 
-        let fingerprint = extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
+        let fingerprint =
+            extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
@@ -301,14 +305,25 @@ impl LanguageAdapter for RustAdapter {
     }
 }
 
-fn extract_fingerprint(node: tree_sitter::Node<'_>, file: &str, name: &str, param_count: usize, complexity: usize) -> FingerprintRow {
+fn extract_fingerprint(
+    node: tree_sitter::Node<'_>,
+    file: &str,
+    name: &str,
+    param_count: usize,
+    complexity: usize,
+) -> FingerprintRow {
     const BRANCHES: &[&str] = &["if_expression", "match_expression", "match_arm"];
     const LOOPS: &[&str] = &["for_expression", "while_expression", "loop_expression"];
     const CALLS: &[&str] = &["call_expression"];
     const RETURNS: &[&str] = &["return_expression"];
     const STMTS: &[&str] = &[
-        "let_declaration", "expression_statement", "return_expression",
-        "if_expression", "for_expression", "while_expression", "loop_expression",
+        "let_declaration",
+        "expression_statement",
+        "return_expression",
+        "if_expression",
+        "for_expression",
+        "while_expression",
+        "loop_expression",
         "match_expression",
     ];
     const ERROR_HANDLING: &[&str] = &["try_expression"];
