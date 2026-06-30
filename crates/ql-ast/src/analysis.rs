@@ -10,7 +10,7 @@ pub fn second_pass(batch: &mut TableBatch) {
     resolve_implements(batch);
     resolve_comment_attachments(batch);
     extract_callsets(batch);
-    compute_similarities(batch, 10, 0.6);
+    compute_similarities(batch, batch.fingerprints.len().saturating_sub(1), 0.0);
 }
 
 fn resolve_has_test(batch: &mut TableBatch) {
@@ -56,17 +56,17 @@ fn resolve_comment_attachments(batch: &mut TableBatch) {
     const FUNCTION_TAG: u8 = 0;
     const STRUCT_TAG: u8 = 1;
 
-    let mut definitions_by_file: HashMap<&str, Vec<(usize, u8, &str)>> = HashMap::new();
+    let mut definitions_by_file: HashMap<String, Vec<(usize, u8, &str)>> = HashMap::new();
 
     for function in &batch.functions {
         definitions_by_file
-            .entry(function.file.as_str())
+            .entry(function.file.clone())
             .or_default()
             .push((function.line, FUNCTION_TAG, function.name.as_str()));
     }
     for struct_row in &batch.structs {
         definitions_by_file
-            .entry(struct_row.file.as_str())
+            .entry(struct_row.file.clone())
             .or_default()
             .push((struct_row.line, STRUCT_TAG, struct_row.name.as_str()));
     }
@@ -75,15 +75,52 @@ fn resolve_comment_attachments(batch: &mut TableBatch) {
         definitions.sort_unstable_by_key(|&(line, tag, _)| (line, tag));
     }
 
-    for comment in &mut batch.comments {
-        comment.attached_to = definitions_by_file
-            .get(comment.file.as_str())
-            .and_then(|definitions| {
-                let index = definitions.partition_point(|&(line, _, _)| line <= comment.line);
-                definitions.get(index)
-            })
-            .map(|&(_, _, name)| name.to_string())
-            .unwrap_or_default();
+    let mut comments_by_file: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, comment) in batch.comments.iter().enumerate() {
+        comments_by_file
+            .entry(comment.file.clone())
+            .or_default()
+            .push(index);
+    }
+
+    for comment_indexes in comments_by_file.values_mut() {
+        comment_indexes.sort_unstable_by_key(|&index| batch.comments[index].line);
+
+        let mut start = 0;
+        while start < comment_indexes.len() {
+            let mut end = start + 1;
+            while end < comment_indexes.len() {
+                let previous = batch.comments[comment_indexes[end - 1]].line;
+                let current = batch.comments[comment_indexes[end]].line;
+                if current != previous + 1 {
+                    break;
+                }
+                end += 1;
+            }
+
+            let last_line = batch.comments[comment_indexes[end - 1]].line;
+            let attached_to = definitions_by_file
+                .get(&batch.comments[comment_indexes[start]].file)
+                .and_then(|definitions| {
+                    let index = definitions.partition_point(|&(line, _, _)| line <= last_line);
+                    definitions.get(index).and_then(
+                        |&(line, _, name)| {
+                            if line == last_line + 1 {
+                                Some(name.to_string())
+                            } else {
+                                None
+                            }
+                        },
+                    )
+                })
+                .unwrap_or_default();
+
+            for &comment_index in &comment_indexes[start..end] {
+                batch.comments[comment_index].attached_to = attached_to.clone();
+            }
+
+            start = end;
+        }
     }
 }
 
@@ -135,7 +172,7 @@ fn normalize_csv_list(value: &str) -> String {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use crate::rows::{CommentRow, FunctionRow, StructRow, TableBatch};
+    use crate::rows::{CommentRow, FingerprintRow, FunctionRow, StructRow, TableBatch};
 
     use super::second_pass;
 
@@ -144,7 +181,7 @@ mod tests {
         let mut batch = TableBatch::new("");
         batch.functions.push(FunctionRow {
             file: "src/lib.rs".to_string(),
-            line: 5,
+            line: 2,
             name: "add".to_string(),
             visibility: "private".to_string(),
             param_count: 0,
@@ -222,9 +259,9 @@ mod tests {
     }
 
     #[test]
-    fn attaches_to_nearest_following_function() {
+    fn attaches_to_directly_following_function() {
         let mut batch = TableBatch::new("");
-        batch.functions.push(function("src/lib.rs", 10, "first"));
+        batch.functions.push(function("src/lib.rs", 6, "first"));
         batch.functions.push(function("src/lib.rs", 20, "second"));
         batch.comments.push(comment("src/lib.rs", 5));
 
@@ -234,9 +271,9 @@ mod tests {
     }
 
     #[test]
-    fn attaches_to_nearest_following_struct() {
+    fn attaches_to_directly_following_struct() {
         let mut batch = TableBatch::new("");
-        batch.structs.push(struct_row("src/lib.rs", 30, "Config"));
+        batch.structs.push(struct_row("src/lib.rs", 26, "Config"));
         batch.comments.push(comment("src/lib.rs", 25));
 
         second_pass(&mut batch);
@@ -245,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn picks_whichever_definition_is_closer() {
+    fn does_not_attach_across_blank_lines() {
         let mut batch = TableBatch::new("");
         batch.functions.push(function("src/lib.rs", 50, "far_fn"));
         batch.structs.push(struct_row("src/lib.rs", 12, "Near"));
@@ -253,7 +290,7 @@ mod tests {
 
         second_pass(&mut batch);
 
-        assert_eq!(batch.comments[0].attached_to, "Near");
+        assert_eq!(batch.comments[0].attached_to, "");
     }
 
     #[test]
@@ -263,7 +300,7 @@ mod tests {
         batch
             .structs
             .push(struct_row("src/lib.rs", 10, "TiedStruct"));
-        batch.comments.push(comment("src/lib.rs", 5));
+        batch.comments.push(comment("src/lib.rs", 9));
 
         second_pass(&mut batch);
 
@@ -297,9 +334,9 @@ mod tests {
     #[test]
     fn each_comment_attaches_independently_within_a_file() {
         let mut batch = TableBatch::new("");
-        batch.functions.push(function("src/lib.rs", 5, "alpha"));
-        batch.functions.push(function("src/lib.rs", 15, "beta"));
-        batch.structs.push(struct_row("src/lib.rs", 25, "Gamma"));
+        batch.functions.push(function("src/lib.rs", 2, "alpha"));
+        batch.functions.push(function("src/lib.rs", 11, "beta"));
+        batch.structs.push(struct_row("src/lib.rs", 21, "Gamma"));
         batch.comments.push(comment("src/lib.rs", 1)); // -> alpha
         batch.comments.push(comment("src/lib.rs", 10)); // -> beta
         batch.comments.push(comment("src/lib.rs", 20)); // -> Gamma
@@ -320,12 +357,25 @@ mod tests {
         // instead.
         let mut batch = TableBatch::new("");
         batch.functions.push(function("src/lib.rs", 5, "same_line"));
-        batch.functions.push(function("src/lib.rs", 9, "next"));
+        batch.functions.push(function("src/lib.rs", 6, "next"));
         batch.comments.push(comment("src/lib.rs", 5));
 
         second_pass(&mut batch);
 
         assert_eq!(batch.comments[0].attached_to, "next");
+    }
+
+    #[test]
+    fn contiguous_comment_block_attaches_together() {
+        let mut batch = TableBatch::new("");
+        batch.comments.push(comment("src/lib.rs", 1));
+        batch.comments.push(comment("src/lib.rs", 2));
+        batch.functions.push(function("src/lib.rs", 3, "actual"));
+
+        second_pass(&mut batch);
+
+        assert_eq!(batch.comments[0].attached_to, "actual");
+        assert_eq!(batch.comments[1].attached_to, "actual");
     }
 
     // -- resolve_comment_attachments performance regression --
@@ -446,5 +496,34 @@ mod tests {
             let trailing = comments_for_file.last().unwrap();
             assert_eq!(*trailing, "");
         }
+    }
+
+    #[test]
+    fn second_pass_keeps_all_similarity_rows() {
+        let mut batch = TableBatch::new("");
+        batch.fingerprints.push(FingerprintRow {
+            file: "a.rs".to_string(),
+            line: 1,
+            name: "a".to_string(),
+            ..FingerprintRow::default()
+        });
+        batch.fingerprints.push(FingerprintRow {
+            file: "b.rs".to_string(),
+            line: 1,
+            name: "b".to_string(),
+            complexity: 1,
+            ..FingerprintRow::default()
+        });
+        batch.fingerprints.push(FingerprintRow {
+            file: "c.rs".to_string(),
+            line: 1,
+            name: "c".to_string(),
+            complexity: 2,
+            ..FingerprintRow::default()
+        });
+
+        second_pass(&mut batch);
+
+        assert_eq!(batch.similarities.len(), 6);
     }
 }

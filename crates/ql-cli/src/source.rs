@@ -160,10 +160,20 @@ pub fn collect_source_batch(root: &Path) -> Result<TableBatch, String> {
             continue;
         }
 
-        let source = std::fs::read_to_string(&path)
-            .map_err(|e| format!("error: failed to read {}: {e}", path.display()))?;
-        let file_batch = walk_source(adapter, relative, &source)
-            .map_err(|e| format!("error: failed to parse {}: {e}", path.display()))?;
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(e) => {
+                eprintln!("warning: failed to read {}, skipping: {e}", path.display());
+                continue;
+            }
+        };
+        let file_batch = match walk_source(adapter, relative, &source) {
+            Ok(batch) => batch,
+            Err(e) => {
+                eprintln!("warning: failed to parse {}, skipping: {e}", path.display());
+                continue;
+            }
+        };
         if let Some((modified_secs, modified_nanos)) = cache_key(&metadata) {
             next_cache.insert(
                 file_batch.current_file.clone(),
@@ -285,6 +295,22 @@ mod tests {
 
         assert_eq!(snapshot.len(), 1);
         assert!(snapshot.contains_key("main.go"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn skips_unreadable_source_files() {
+        let root = std::env::temp_dir().join("ql_test_unreadable_source");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp dir");
+        fs::write(root.join("ok.rs"), "fn ok() {}\n").expect("write");
+        fs::write(root.join("bad.rs"), [0xff, 0xfe, 0x00]).expect("write invalid utf8");
+
+        let batch = collect_source_batch(&root).expect("batch should still build");
+
+        assert_eq!(batch.functions.len(), 1);
+        assert_eq!(batch.functions[0].name, "ok");
 
         let _ = fs::remove_dir_all(&root);
     }

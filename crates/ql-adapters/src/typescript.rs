@@ -127,6 +127,7 @@ impl TypeScriptAdapter {
         let Ok(name) = name_node.utf8_text(source.as_bytes()) else {
             return;
         };
+        let qualified_name = qualify_method_name(node, source, name);
 
         let params = node
             .child_by_field_name("parameters")
@@ -143,13 +144,19 @@ impl TypeScriptAdapter {
 
         let complexity = Self::count_complexity(node, source);
 
-        let fingerprint = extract_fingerprint(node, &rows.current_file, name, params, complexity);
+        let fingerprint = extract_fingerprint(
+            node,
+            &rows.current_file,
+            &qualified_name,
+            params,
+            complexity,
+        );
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            name: name.to_string(),
+            name: qualified_name,
             visibility: Self::is_public(name, node, source),
             param_count: params,
             return_type,
@@ -165,12 +172,12 @@ impl TypeScriptAdapter {
         let Ok(callee) = func_node.utf8_text(source.as_bytes()) else {
             return;
         };
-        let caller = find_enclosing_function(node, source).unwrap_or("");
+        let caller = find_enclosing_function(node, source).unwrap_or_default();
 
         rows.calls.push(CallRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            caller: caller.to_string(),
+            caller,
             callee: callee.to_string(),
             is_external: callee.contains('.'),
         });
@@ -183,11 +190,7 @@ impl TypeScriptAdapter {
             .and_then(|s| s.utf8_text(source.as_bytes()).ok())
             .map(|s| s.trim_matches('"').to_string())
             .unwrap_or_else(|| text.trim_start_matches("import ").to_string());
-        let alias = if let Some(pos) = text.rfind(" as ") {
-            text[pos + 4..].trim_end_matches(';').to_string()
-        } else {
-            String::new()
-        };
+        let alias = extract_import_alias(text);
         let is_std = matches!(
             module.as_str(),
             "fs" | "path"
@@ -471,11 +474,40 @@ fn extract_fingerprint(
     }
 }
 
-fn find_enclosing_function<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+fn find_enclosing_function(node: Node<'_>, source: &str) -> Option<String> {
     let mut current = node.parent()?;
     loop {
         match current.kind() {
-            "function_declaration" | "method_definition" => {
+            "function_declaration" => {
+                return current
+                    .child_by_field_name("name")
+                    .and_then(|name| name.utf8_text(source.as_bytes()).ok())
+                    .map(str::to_string);
+            }
+            "method_definition" => {
+                let name = current
+                    .child_by_field_name("name")
+                    .and_then(|name| name.utf8_text(source.as_bytes()).ok())?;
+                return Some(qualify_method_name(current, source, name));
+            }
+            "source_file" => return None,
+            _ => current = current.parent()?,
+        }
+    }
+}
+
+fn qualify_method_name(node: Node<'_>, source: &str, name: &str) -> String {
+    match find_enclosing_class_name(node, source) {
+        Some(owner) => format!("{owner}.{name}"),
+        None => name.to_string(),
+    }
+}
+
+fn find_enclosing_class_name<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+    let mut current = node.parent()?;
+    loop {
+        match current.kind() {
+            "class_declaration" | "abstract_class_declaration" => {
                 return current
                     .child_by_field_name("name")
                     .and_then(|name| name.utf8_text(source.as_bytes()).ok());
@@ -484,6 +516,43 @@ fn find_enclosing_function<'a>(node: Node<'a>, source: &'a str) -> Option<&'a st
             _ => current = current.parent()?,
         }
     }
+}
+
+fn extract_import_alias(text: &str) -> String {
+    if let Some((_, rest)) = text.split_once("* as ") {
+        return rest
+            .split(" from ")
+            .next()
+            .unwrap_or(rest)
+            .trim()
+            .trim_end_matches(';')
+            .to_string();
+    }
+
+    if text.contains('{') && text.contains('}') {
+        if let Some((_, rest)) = text.split_once(" as ") {
+            return rest
+                .split('}')
+                .next()
+                .unwrap_or(rest)
+                .trim()
+                .trim_end_matches(';')
+                .to_string();
+        }
+        return String::new();
+    }
+
+    let import_text = text.trim_start_matches("import ").trim_end_matches(';').trim();
+    if let Some((head, _)) = import_text.split_once(" from ") {
+        return head
+            .split(',')
+            .next()
+            .unwrap_or(head)
+            .trim()
+            .to_string();
+    }
+
+    String::new()
 }
 
 #[cfg(test)]
@@ -515,12 +584,37 @@ mod tests {
             .expect("typescript grammar should parse");
 
         assert_eq!(batch.functions.len(), 2);
-        assert_eq!(batch.functions[0].name, "greet");
+        assert_eq!(batch.functions[0].name, "Person.greet");
         assert_eq!(batch.functions[1].name, "add");
         assert_eq!(batch.imports.len(), 1);
         assert_eq!(batch.imports[0].module, "fs");
+        assert_eq!(batch.imports[0].alias, "readFile");
         assert_eq!(batch.structs.len(), 1);
         assert_eq!(batch.structs[0].implements, "Greeter,Serializable");
         assert_eq!(batch.variables.len(), 1);
+    }
+
+    #[test]
+    fn qualifies_method_callers_per_class() {
+        let source = r#"
+    class A {
+      run() { helperA(); }
+    }
+
+    class B {
+      run() { helperB(); }
+    }
+
+    function helperA() {}
+    function helperB() {}
+    "#;
+
+        let batch = walk_source(&TypeScriptAdapter, "main.ts", source)
+            .expect("typescript grammar should parse");
+
+        assert_eq!(batch.functions[0].name, "A.run");
+        assert_eq!(batch.functions[1].name, "B.run");
+        assert_eq!(batch.calls[0].caller, "A.run");
+        assert_eq!(batch.calls[1].caller, "B.run");
     }
 }

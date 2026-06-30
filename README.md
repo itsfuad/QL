@@ -1,8 +1,8 @@
 # ql
 
-`ql` lets developers query codebases with SQL.
+`ql` is a CLI for querying codebases with a small SQL-like language.
 
-It parses source files with Tree-sitter, maps syntax into language-agnostic tables, loads rows into DuckDB, and runs SQL against those tables. Goal: deterministic code search and analysis without AI, embeddings, or fuzzy guesses.
+It parses source files with Tree-sitter, maps syntax into language-agnostic tables, loads rows into DuckDB, and runs deterministic queries over that indexed data.
 
 ## Install
 
@@ -20,18 +20,58 @@ cargo install --path crates/ql-cli
 ql --langs
 ```
 
-## Example
+## Query Language
 
-```bash
-ql "SELECT name, file, line
-    FROM functions
-    WHERE complexity > 10
-      AND has_test = false" ./src
+`ql` supports a focused SQL-like DSL for codebase data.
+
+```sql
+SELECT [DISTINCT] <columns | *>
+FROM <table> [AS alias]
+[JOIN <table> [AS alias] ON <condition>]
+[WHERE <condition>]
+[GROUP BY <column>, ...]
+[HAVING <condition>]
+[ORDER BY <column> [ASC|DESC], ...]
+[LIMIT <n>]
 ```
 
-## What It Extracts
+Supported in the current parser:
 
-Language adapters populate the shared schema:
+- column selection or `*`
+- `DISTINCT`
+- `JOIN ... ON ...`
+- `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`
+- aliases with `AS`
+- operators: `=`, `!=`, `>`, `<`, `>=`, `<=`, `AND`, `OR`, `NOT`, `IN (...)`, `NOT IN (...)`, `LIKE`, `BETWEEN`, `IS NULL`
+
+Not supported:
+
+- subqueries
+- aggregate functions such as `COUNT(...)`, `SUM(...)`, `AVG(...)`
+- arithmetic or computed expressions in `SELECT`
+- join types such as `LEFT JOIN` or `FULL JOIN`
+
+Full query documentation: [docs/queries.md](docs/queries.md)
+
+## Start Here
+
+```bash
+ql "SELECT * FROM functions LIMIT 5" .
+```
+
+## Common Examples
+
+```bash
+ql "SELECT name, file, line FROM functions ORDER BY file, line LIMIT 20" .
+ql "SELECT name, file, line, complexity FROM functions WHERE complexity > 10 ORDER BY complexity DESC LIMIT 20" .
+ql "SELECT caller, callee, file, line FROM calls WHERE is_external = true ORDER BY file, line" .
+ql "SELECT module, file, line FROM imports WHERE is_std = true ORDER BY file, line" .
+ql "SELECT name_a, file_a, name_b, file_b, combined_score FROM similarities ORDER BY combined_score DESC LIMIT 20" .
+```
+
+## Schema
+
+`ql` indexes these shared tables:
 
 - `functions`
 - `calls`
@@ -39,98 +79,18 @@ Language adapters populate the shared schema:
 - `structs`
 - `variables`
 - `comments`
-- `fn_fingerprints` — structural metrics per function
-- `fn_callsets` — callee sets per function
-- `similarities` — pairwise similarity scores
+- `fn_fingerprints`
+- `fn_callsets`
+- `similarities`
 
-Schema source lives in [schema/tables.json](schema/tables.json).
+Canonical schema source: [schema/tables.json](schema/tables.json)
 
-## Example Queries
-
-All examples assume you run them from a repository root or pass an explicit path as the final argument.
-
-1. Find non-test functions with higher complexity.
+## Output Formats
 
 ```bash
-ql "SELECT name, file, line, complexity FROM functions WHERE has_test = false AND complexity > 10 ORDER BY complexity DESC" .
-```
-
-2. List all external calls.
-
-```bash
-ql "SELECT caller, callee, file, line FROM calls WHERE is_external = true ORDER BY file, line" .
-```
-
-3. Inspect imports from the standard library.
-
-```bash
-ql "SELECT module, alias, file, line FROM imports WHERE is_std = true ORDER BY file, line" .
-```
-
-4. Find public structs and their implemented interfaces.
-
-```bash
-ql "SELECT name, visibility, implements, file, line FROM structs WHERE visibility = 'public' ORDER BY file, line" .
-```
-
-5. List mutable variables.
-
-```bash
-ql "SELECT name, type_hint, scope, file, line FROM variables WHERE is_mutated = true ORDER BY file, line" .
-```
-
-6. Show doc comments attached to code.
-
-```bash
-ql "SELECT text, attached_to, file, line FROM comments WHERE is_doc = true AND attached_to != '' ORDER BY file, line" .
-```
-
-7. Find functions that mention tests.
-
-```bash
-ql "SELECT name, file, line FROM functions WHERE has_test = true ORDER BY file, line" .
-```
-
-8. Show functions that return results.
-
-```bash
-ql "SELECT name, return_type, file, line FROM functions WHERE return_type LIKE '%Result%' ORDER BY file, line" .
-```
-
-9. Render the same data as JSON.
-
-```bash
-ql --format json "SELECT name, file, line FROM structs ORDER BY file, line LIMIT 20" .
-```
-
-10. Render a compact CSV export.
-
-```bash
-ql --format csv "SELECT name, file, line FROM functions ORDER BY file, line LIMIT 50" .
-```
-
-11. Find structurally similar functions (code clones).
-
-```bash
-ql "SELECT name_a, file_a, name_b, file_b, combined_score FROM similarities ORDER BY combined_score DESC LIMIT 20" .
-```
-
-12. Find functions similar to a specific one.
-
-```bash
-ql "SELECT name_b, file_b, combined_score FROM similarities WHERE name_a = 'parse_config' ORDER BY combined_score DESC" .
-```
-
-13. Find functions with similar call patterns.
-
-```bash
-ql "SELECT s.name_a, s.name_b, s.behavioral_score FROM similarities s WHERE s.behavioral_score > 0.8 ORDER BY s.behavioral_score DESC" .
-```
-
-14. Inspect structural fingerprint of a function.
-
-```bash
-ql "SELECT name, file, complexity, nesting_depth, branch_count, loop_count, call_count FROM fn_fingerprints ORDER BY complexity DESC LIMIT 20" .
+ql --format table "SELECT name, file, line FROM functions LIMIT 10" .
+ql --format json "SELECT name, file, line FROM functions LIMIT 10" .
+ql --format csv "SELECT name, file, line FROM functions LIMIT 10" .
 ```
 
 ## Architecture
@@ -140,24 +100,12 @@ ql/
 ├── crates/
 │   ├── ql-ast/         AST bridge, Tree-sitter walk, schema mapper
 │   ├── ql-adapters/    Tree-sitter adapter implementations per language
-│   ├── ql-core/        Query engine, SQL parser, planner, DuckDB execution
-│   └── ql-cli/         CLI binary — arg parsing, output formatting, watch mode
-└── extension/          VS Code extension (TypeScript)
+│   ├── ql-core/        Query engine, parser, planner, DuckDB execution
+│   └── ql-cli/         CLI binary and watch mode
+└── extension/          VS Code extension
 ```
 
-Single binary. No subprocess protocol. Rust CLI only.
-
-## Current Status
-
-- Shared row types and `TableBatch`
-- Language adapter trait and Tree-sitter walk path
-- Go, Rust, TypeScript, and Python adapter support
-- DuckDB-backed in-memory schema with multi-table ingest
-- Hand-written SQL parser (SELECT, FROM, JOIN, WHERE, ORDER BY, LIMIT, operators)
-- Planner maps SQL AST to DuckDB execution
-- CLI with table/JSON/CSV output and watch mode
-- VS Code extension sidebar for running queries and opening rows
-- Structural and behavioral code similarity via function fingerprints and call patterns
+Single binary. No subprocess protocol.
 
 ## Development
 
@@ -169,9 +117,3 @@ cargo build --bin ql
 ## Scope
 
 v1 targets Linux and macOS. No AI, no remote repositories, no type-resolution-heavy semantic analysis, no plugin system.
-
-## TODO
- - [ ] add *.ext search in query
- - [ ] add line:col in table in cmd
- - [ ] better UI
- - [ ] cross-platform

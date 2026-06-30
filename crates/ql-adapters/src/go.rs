@@ -121,6 +121,7 @@ impl GoAdapter {
         let Ok(name) = name_node.utf8_text(source.as_bytes()) else {
             return;
         };
+        let qualified_name = qualify_method_name(node, source, name);
 
         let params = node.child_by_field_name("parameters");
         let param_count = params.map(|p| Self::count_params(p, source)).unwrap_or(0);
@@ -133,14 +134,19 @@ impl GoAdapter {
 
         let complexity = Self::count_complexity(node, source);
 
-        let fingerprint =
-            extract_fingerprint(node, &rows.current_file, name, param_count, complexity);
+        let fingerprint = extract_fingerprint(
+            node,
+            &rows.current_file,
+            &qualified_name,
+            param_count,
+            complexity,
+        );
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            name: name.to_string(),
+            name: qualified_name,
             visibility: if Self::is_exported(name) {
                 "public"
             } else {
@@ -162,13 +168,13 @@ impl GoAdapter {
             return;
         };
 
-        let caller = find_enclosing_function(node, source).unwrap_or("");
+        let caller = find_enclosing_function(node, source).unwrap_or_default();
         let is_external = callee.contains('.');
 
         rows.calls.push(CallRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            caller: caller.to_string(),
+            caller,
             callee: callee.to_string(),
             is_external,
         });
@@ -436,14 +442,21 @@ fn extract_fingerprint(
     }
 }
 
-fn find_enclosing_function<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+fn find_enclosing_function(node: Node<'_>, source: &str) -> Option<String> {
     let mut current = node.parent()?;
     loop {
         match current.kind() {
-            "function_declaration" | "method_declaration" => {
+            "function_declaration" => {
                 return current
                     .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source.as_bytes()).ok());
+                    .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                    .map(str::to_string);
+            }
+            "method_declaration" => {
+                let name = current
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source.as_bytes()).ok())?;
+                return Some(qualify_method_name(current, source, name));
             }
             "source_file" => return None,
             _ => {
@@ -451,6 +464,25 @@ fn find_enclosing_function<'a>(node: Node<'a>, source: &'a str) -> Option<&'a st
             }
         }
     }
+}
+
+fn qualify_method_name(node: Node<'_>, source: &str, name: &str) -> String {
+    match receiver_type_name(node, source) {
+        Some(receiver) => format!("{receiver}.{name}"),
+        None => name.to_string(),
+    }
+}
+
+fn receiver_type_name(node: Node<'_>, source: &str) -> Option<String> {
+    let receiver = node.child_by_field_name("receiver")?;
+    let text = receiver.utf8_text(source.as_bytes()).ok()?;
+    let cleaned = text
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim();
+    let last = cleaned.split_whitespace().last()?;
+    Some(last.trim_start_matches('*').to_string())
 }
 
 #[cfg(test)]
@@ -478,5 +510,27 @@ mod tests {
         assert_eq!(batch.functions[0].line, 4);
         assert_eq!(batch.functions[1].name, "add");
         assert_eq!(batch.functions[1].line, 6);
+    }
+
+    #[test]
+    fn qualifies_method_names_and_callers() {
+        let source = r#"
+    package main
+
+    type A struct{}
+    type B struct{}
+
+    func (a *A) Run() { helperA() }
+    func (b *B) Run() { helperB() }
+    func helperA() {}
+    func helperB() {}
+    "#;
+
+        let batch = walk_source(&GoAdapter, "main.go", source).expect("go grammar should parse");
+
+        assert_eq!(batch.functions[0].name, "A.Run");
+        assert_eq!(batch.functions[1].name, "B.Run");
+        assert_eq!(batch.calls[0].caller, "A.Run");
+        assert_eq!(batch.calls[1].caller, "B.Run");
     }
 }

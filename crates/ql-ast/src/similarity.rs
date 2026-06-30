@@ -382,4 +382,61 @@ mod tests {
         assert_eq!(batch.callsets.len(), 2);
         assert_eq!(batch.fingerprints[0].unique_callee_count, 2);
     }
+
+    #[test]
+    fn test_extract_callsets_keeps_same_named_methods_separate() {
+        let mut batch = TableBatch::default();
+        batch.functions = vec![
+            FunctionRow {
+                file: "main.ts".into(),
+                line: 2,
+                name: "A.run".into(),
+                ..Default::default()
+            },
+            FunctionRow {
+                file: "main.ts".into(),
+                line: 5,
+                name: "B.run".into(),
+                ..Default::default()
+            },
+        ];
+        batch.fingerprints = vec![
+            FingerprintRow {
+                file: "main.ts".into(),
+                line: 2,
+                name: "A.run".into(),
+                ..Default::default()
+            },
+            FingerprintRow {
+                file: "main.ts".into(),
+                line: 5,
+                name: "B.run".into(),
+                ..Default::default()
+            },
+        ];
+        batch.calls = vec![
+            CallRow {
+                file: "main.ts".into(),
+                line: 3,
+                caller: "A.run".into(),
+                callee: "helperA".into(),
+                is_external: false,
+            },
+            CallRow {
+                file: "main.ts".into(),
+                line: 6,
+                caller: "B.run".into(),
+                callee: "helperB".into(),
+                is_external: false,
+            },
+        ];
+
+        extract_callsets(&mut batch);
+
+        assert_eq!(batch.callsets.len(), 2);
+        assert_eq!(batch.callsets[0].line, 2);
+        assert_eq!(batch.callsets[1].line, 5);
+        assert_eq!(batch.fingerprints[0].unique_callee_count, 1);
+        assert_eq!(batch.fingerprints[1].unique_callee_count, 1);
+    }
 }

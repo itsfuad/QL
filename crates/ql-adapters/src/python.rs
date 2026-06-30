@@ -62,6 +62,7 @@ impl PythonAdapter {
         let Ok(name) = name_node.utf8_text(source.as_bytes()) else {
             return;
         };
+        let qualified_name = qualify_method_name(node, source, name);
 
         let params = node
             .child_by_field_name("parameters")
@@ -75,13 +76,19 @@ impl PythonAdapter {
 
         let complexity = Self::count_complexity(node);
 
-        let fingerprint = extract_fingerprint(node, &rows.current_file, name, params, complexity);
+        let fingerprint = extract_fingerprint(
+            node,
+            &rows.current_file,
+            &qualified_name,
+            params,
+            complexity,
+        );
         rows.fingerprints.push(fingerprint);
 
         rows.functions.push(FunctionRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            name: name.to_string(),
+            name: qualified_name,
             visibility: Self::is_private(name),
             param_count: params,
             return_type,
@@ -142,12 +149,12 @@ impl PythonAdapter {
         let Ok(callee) = function_node.utf8_text(source.as_bytes()) else {
             return;
         };
-        let caller = find_enclosing_function(node, source).unwrap_or("");
+        let caller = find_enclosing_function(node, source).unwrap_or_default();
 
         rows.calls.push(CallRow {
             file: rows.current_file.clone(),
             line: node.start_position().row + 1,
-            caller: caller.to_string(),
+            caller,
             callee: callee.to_string(),
             is_external: callee.contains('.'),
         });
@@ -354,11 +361,34 @@ fn extract_fingerprint(
     }
 }
 
-fn find_enclosing_function<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+fn find_enclosing_function(node: Node<'_>, source: &str) -> Option<String> {
     let mut current = node.parent()?;
     loop {
         match current.kind() {
             "function_definition" => {
+                let name = current
+                    .child_by_field_name("name")
+                    .and_then(|name| name.utf8_text(source.as_bytes()).ok())?;
+                return Some(qualify_method_name(current, source, name));
+            }
+            "source_file" => return None,
+            _ => current = current.parent()?,
+        }
+    }
+}
+
+fn qualify_method_name(node: Node<'_>, source: &str, name: &str) -> String {
+    match find_enclosing_class_name(node, source) {
+        Some(owner) => format!("{owner}.{name}"),
+        None => name.to_string(),
+    }
+}
+
+fn find_enclosing_class_name<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+    let mut current = node.parent()?;
+    loop {
+        match current.kind() {
+            "class_definition" => {
                 return current
                     .child_by_field_name("name")
                     .and_then(|name| name.utf8_text(source.as_bytes()).ok());
@@ -394,8 +424,8 @@ mod tests {
             walk_source(&PythonAdapter, "main.py", source).expect("python grammar should parse");
 
         assert_eq!(batch.functions.len(), 2);
-        assert_eq!(batch.functions[0].name, "greet");
-        assert_eq!(batch.functions[1].name, "add");
+        assert_eq!(batch.functions[0].name, "User.greet");
+        assert_eq!(batch.functions[1].name, "User.add");
         assert_eq!(batch.imports.len(), 1);
         assert_eq!(batch.structs.len(), 1);
         assert_eq!(batch.structs[0].implements, "BaseUser,Serializable");

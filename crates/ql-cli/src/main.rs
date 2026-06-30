@@ -18,12 +18,16 @@ fn main() {
 
     let mut format = String::from("table");
     let mut show_langs = false;
+    let mut show_help = false;
+    let mut show_version = false;
     let mut watch = false;
     let mut positional = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--help" | "-h" => show_help = true,
+            "--version" | "-V" => show_version = true,
             "--format" => {
                 i += 1;
                 format = args.get(i).cloned().unwrap_or_else(|| {
@@ -40,6 +44,16 @@ fn main() {
             arg => positional.push(arg.to_string()),
         }
         i += 1;
+    }
+
+    if show_help {
+        print!("{}", help_text());
+        process::exit(0);
+    }
+
+    if show_version {
+        println!("{}", version_text());
+        process::exit(0);
     }
 
     if show_langs {
@@ -114,5 +128,52 @@ fn main() {
     if let Err(e) = format_response(&mut std::io::stdout(), &format, &result) {
         eprintln!("error: {e}");
         process::exit(1);
+    }
+}
+
+fn help_text() -> String {
+    "\
+ql - query codebases with a small SQL-like language
+
+Usage:
+  ql [options] <query> [path]
+
+Arguments:
+  <query>    Query to run
+  [path]     Repository or source root (default: current directory)
+
+Options:
+  --format <table|json|csv>  Output format (default: table)
+  --watch                    Re-run on file changes
+  --langs                    List supported languages
+  -h, --help                 Show this help
+  -V, --version              Show version
+"
+    .to_string()
+}
+
+fn version_text() -> &'static str {
+    concat!("ql ", env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{help_text, version_text};
+
+    #[test]
+    fn help_mentions_core_flags() {
+        let help = help_text();
+
+        assert!(help.contains("Usage:"));
+        assert!(help.contains("--format <table|json|csv>"));
+        assert!(help.contains("--watch"));
+        assert!(help.contains("--langs"));
+        assert!(help.contains("-h, --help"));
+        assert!(help.contains("-V, --version"));
+    }
+
+    #[test]
+    fn version_uses_package_version() {
+        assert_eq!(version_text(), concat!("ql ", env!("CARGO_PKG_VERSION")));
     }
 }
